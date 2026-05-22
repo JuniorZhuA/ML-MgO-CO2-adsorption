@@ -134,12 +134,141 @@ def figure_1_clustermap() -> plt.Figure:
     return fig
 
 
+def figure_2_boxplot() -> plt.Figure:
+    """Figure 2: 数值特征标准化箱线图 (300 DPI)
+
+    19个数值特征，Z-score标准化后横向箱线图，按领域分组排列。
+    """
+
+    from src.data_loader import load_and_clean
+    from src.preprocessing import MissingValueImputer
+    from src.feature_engineering import FeatureEngineer
+
+    print("加载预处理数据...")
+    df = load_and_clean()
+    df = MissingValueImputer().fit_transform(df)
+    df = FeatureEngineer().fit_transform(df)
+
+    X = df.drop(columns=[TARGET])
+    _, num_cols = _get_column_lists(X)
+    X_num = X[num_cols]
+
+    # Z-score 标准化 (逐列忽略NaN, 排除零方差列)
+    X_scaled = X_num.copy()
+    zero_var_cols = []
+    for col in X_scaled.columns:
+        col_std = X_scaled[col].std()
+        if col_std < 1e-10:
+            zero_var_cols.append(col)
+            X_scaled = X_scaled.drop(columns=[col])
+        else:
+            mu = X_scaled[col].mean()
+            X_scaled[col] = (X_scaled[col] - mu) / col_std
+
+    if zero_var_cols:
+        print(f"  排除零方差特征: {zero_var_cols}")
+        num_cols = [c for c in num_cols if c not in zero_var_cols]
+
+    # 按领域分组排序
+    feature_groups = [
+        ("孔结构特征", [
+            "SBET_m2_g", "Vtotal_cm3_g", "Vmicro_cm3_g", "Vmeso_cm3_g", "microporosity",
+        ]),
+        ("MgO 负载特征", [
+            "MgO_mass_ratio", "MgO_surface_density",
+        ]),
+        ("工艺条件", [
+            "temperature_C", "pressure_bar", "T_lnP", "inv_T_K",
+        ]),
+        ("活化参数", [
+            "act1_temp_C", "act1_duration_h", "act2_temp_C", "act2_duration_h",
+        ]),
+        ("碳化参数", [
+            "carb1_temp_C", "carb1_duration_h", "carb2_temp_C", "carb2_duration_h",
+        ]),
+    ]
+
+    ordered_feats = []
+    for _, feats in feature_groups:
+        for f in feats:
+            if f in X_scaled.columns:
+                ordered_feats.append(f)
+
+    X_plot = X_scaled[ordered_feats]
+
+    # 转换为长格式用于 seaborn
+    df_long = X_plot.melt(var_name="Feature", value_name="Z-score")
+
+    # 绘图
+    n_feat = len(ordered_feats)
+    fig_h = max(5.5, n_feat * 0.38)
+    fig, ax = plt.subplots(figsize=(10, fig_h))
+
+    # 按组分配明亮柔和色
+    group_colors = ["#7EC8E3", "#F4A87C", "#A8D8A8", "#D4B5E1", "#F7C873"]
+    feat_to_color = {}
+    for gi, (_, feats) in enumerate(feature_groups):
+        for f in feats:
+            if f in ordered_feats:
+                feat_to_color[f] = group_colors[gi]
+
+    bp = sns.boxplot(
+        data=df_long,
+        y="Feature",
+        x="Z-score",
+        order=ordered_feats,
+        palette=feat_to_color,
+        linewidth=0.8,
+        fliersize=2,
+        flierprops={"marker": "o", "markersize": 2, "alpha": 0.4},
+        ax=ax,
+    )
+
+    x_min = np.nanpercentile(X_plot.values, 1)
+    x_max = np.nanpercentile(X_plot.values, 99)
+    if np.isnan(x_min) or np.isinf(x_min):
+        x_min = -4
+    if np.isnan(x_max) or np.isinf(x_max):
+        x_max = 4
+    ax.set_xlim(x_min - 0.3, x_max + 0.3)
+
+    ax.axvline(x=0, color="black", linewidth=0.8, linestyle="-", alpha=0.4)
+
+    ax.set_xlabel("Z-score", fontsize=13, fontweight="bold")
+    ax.set_ylabel("")
+    ax.tick_params(labelsize=10)
+
+    # 保存
+    fig.tight_layout()
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    output_path = FIGURES / "Figure_2_Boxplot.png"
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
+    print(f"\n[OK] 已保存: {output_path}")
+    print(f"     分辨率: 300 DPI, 特征数: {n_feat}")
+
+    plt.close("all")
+    return fig
+
+
 # ============================================================================
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-    print("=" * 60)
-    print("Figure 1: Spearman 相关矩阵热力图")
-    print("=" * 60)
-    figure_1_clustermap()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--figure", type=int, default=0, help="指定图号 (0=全部)")
+    args = parser.parse_args()
+
+    if args.figure == 0 or args.figure == 1:
+        print("=" * 60)
+        print("Figure 1: Spearman 相关矩阵热力图")
+        print("=" * 60)
+        figure_1_clustermap()
+
+    if args.figure == 0 or args.figure == 2:
+        print("=" * 60)
+        print("Figure 2: 数值特征标准化箱线图")
+        print("=" * 60)
+        figure_2_boxplot()
+
     print("完成。")
