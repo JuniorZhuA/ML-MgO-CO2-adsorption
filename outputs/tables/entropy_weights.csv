@@ -1,0 +1,9 @@
+﻿指标,方向,熵值 e,权重 w
+MAPE_mean,cost,0.8862,0.1328
+RMSE_mean,cost,0.8883,0.1303
+RMSE_std,cost,0.8892,0.1293
+R²_mean,benefit,0.8904,0.1278
+MAE_mean,cost,0.8925,0.1254
+R²_std,cost,0.8954,0.122
+tail_rmse_q10_mean,cost,0.8973,0.1198
+tail_rmse_q90_mean,cost,0.9036,0.1124

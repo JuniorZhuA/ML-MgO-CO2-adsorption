@@ -27,8 +27,9 @@ data/processed/
 .DS_Store
 Thumbs.db
 
-# Outputs (generated figures/tables)
-outputs/
+# Outputs — 仅排除大型模型文件（可通过 main.py 重新生成）
+outputs/models/
+outputs/__pycache__/
 
 # Processed data only
 data/processed/
