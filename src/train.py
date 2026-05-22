@@ -8,6 +8,7 @@
 
 import sys
 import io
+import json
 import warnings
 
 import numpy as np
@@ -99,7 +100,7 @@ def run_nested_cv(
     n_outer: int = 5,
     n_inner: int = 3,
     n_trials: int = 100,
-    random_state: int = 42,
+    random_state: int = SEED,
 ) -> dict:
     """对单个模型执行嵌套交叉验证（StratifiedKFold 外层5折 / 内层3折）。
 
@@ -246,7 +247,7 @@ def train_final_model(
     X: pd.DataFrame,
     y: pd.Series,
     n_trials: int = 100,
-    random_state: int = 42,
+    random_state: int = SEED,
 ) -> dict:
     """在全量训练集上运行 Optuna（5折CV）+ 用最优参数训练最终模型。
 
@@ -318,29 +319,26 @@ def train_final_model(
 
 
 def main():
-    sys.stdout = io.TextIOWrapper(
-        sys.stdout.buffer, encoding="utf-8", errors="replace"
-    )
+    if not isinstance(sys.stdout, io.TextIOWrapper) or sys.stdout.encoding != 'utf-8':
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace"
+        )
 
     from src.data_loader import load_and_clean
-    from src.preprocessing import MissingValueImputer
-    from src.feature_engineering import FeatureEngineer
 
-    # ---- 数据准备 ----
+    # ---- 数据准备（仅加载，填补和特征工程已内嵌于各模型Pipeline中）----
     print("=" * 60)
     print("步骤5: 嵌套交叉验证 + Optuna 超参调优（正式运行）")
     print("=" * 60)
 
-    print("\n加载并处理数据...")
+    print("\n加载数据 (填补和特征工程将在每折Pipeline内独立fit)...")
     df = load_and_clean()
-    df = MissingValueImputer().fit_transform(df)
-    df = FeatureEngineer().fit_transform(df)
 
     X = df.drop(columns=[TARGET])
     y = df[TARGET]
 
     n_samples, n_features = X.shape
-    print(f"特征矩阵: {n_samples} × {n_features}")
+    print(f"特征矩阵: {n_samples} × {n_features} (原始列，含文本工艺列)")
     print(f"目标变量: {TARGET} — "
           f"均值={y.mean():.1f}, 标准差={y.std():.1f}, "
           f"范围=[{y.min():.1f}, {y.max():.1f}]")
@@ -348,8 +346,8 @@ def main():
     stratify_bins = create_stratification_bins(y, n_bins=5)
     print(f"目标分箱分布: {dict(sorted(stratify_bins.value_counts().to_dict().items()))}")
 
-    # 所有模型
-    all_models = get_all_models(X)
+    # 所有模型（Pipeline内已包含MissingValueImputer + FeatureEngineer）
+    all_models = get_all_models()
     print(f"\n模型数: {len(all_models)}")
     if not TABPFN_READY:
         print("(TabPFN 未认证，已自动排除)")
@@ -432,6 +430,33 @@ def main():
             f"{agg.get('tail_rmse_q10_mean', 0):10.1f} "
             f"{agg.get('tail_rmse_q90_mean', 0):10.1f}"
         )
+
+    # ---- 保存完整CV结果供TOPSIS ----
+    class NpEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, (np.integer,)):
+                return int(obj)
+            if isinstance(obj, (np.floating,)):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return super().default(obj)
+
+    results_json = {}
+    for name, r in results.items():
+        results_json[name] = {
+            "model": r["model"],
+            "pipeline": r["pipeline"],
+            "aggregate": r["aggregate"],
+            "fold_metrics": r["fold_metrics"],
+            "best_params_per_fold": r.get("best_params_per_fold", []),
+        }
+    tables_dir = ROOT / "outputs" / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    results_path = tables_dir / "cv_results.json"
+    with open(results_path, "w", encoding="utf-8") as f:
+        json.dump(results_json, f, cls=NpEncoder, indent=2, ensure_ascii=False)
+    print(f"\n完整CV结果已保存: {results_path}")
 
     # ---- 最终模型训练集表现 ----
     print(f"\n{'=' * 80}")

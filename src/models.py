@@ -1,4 +1,8 @@
-"""步骤4: ML模型 —— 9个模型，4条预处理管道，Optuna超参搜索空间"""
+"""步骤4: ML模型 —— 9个模型，4条预处理管道，Optuna超参搜索空间
+
+重要: 每条管道内部已包含 MissingValueImputer + FeatureEngineer,
+确保嵌套CV中填补器和特征工程严格仅在训练折上fit。
+"""
 
 import sys
 import io
@@ -7,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from sklearn.base import clone
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
+from sklearn.compose import make_column_transformer, make_column_selector
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
@@ -24,6 +29,8 @@ from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 
 from src.config import SEED, TARGET
+from src.preprocessing import MissingValueImputer
+from src.feature_engineering import FeatureEngineer
 
 # ---------------------------------------------------------------------------
 # TabPFN 可选导入与就绪检测
@@ -43,7 +50,6 @@ except ImportError:  # pragma: no cover
 
 
 def _check_tabpfn_ready() -> bool:
-    """检测 TabPFN 是否已完成许可接受（auth token 已缓存即可，模型权重会在首次 fit 时自动下载）。"""
     if not HAS_TABPFN:
         return False
     token_file = Path.home() / ".cache" / "tabpfn" / "auth_token"
@@ -56,7 +62,7 @@ def _check_tabpfn_ready() -> bool:
 TABPFN_READY = _check_tabpfn_ready()
 
 # ---------------------------------------------------------------------------
-# 特征集定义
+# 特征集定义（供shap_analysis引用）
 # ---------------------------------------------------------------------------
 
 CATEGORICAL_COLUMNS = [
@@ -72,101 +78,109 @@ CATEGORICAL_COLUMNS = [
 
 
 def _get_column_lists(X):
-    """从DataFrame中检测分类列和数值列（排除目标列）。"""
+    """从DataFrame中检测分类列和数值列（排除目标列）—— 供shap_analysis使用。"""
     cat_cols = [c for c in CATEGORICAL_COLUMNS if c in X.columns]
     num_cols = [c for c in X.columns if c not in cat_cols and c != TARGET]
     return cat_cols, num_cols
 
 
 # ---------------------------------------------------------------------------
-# 四条预处理管道
+# 公共列选择器 —— 运行时根据dtype动态识别，无需硬编码列名
+# ---------------------------------------------------------------------------
+
+_cat_sel = make_column_selector(dtype_include=object)
+_num_sel = make_column_selector(dtype_exclude=object)
+
+
+# ---------------------------------------------------------------------------
+# 四条预处理管道（内部已包含 MissingValueImputer + FeatureEngineer）
 # ---------------------------------------------------------------------------
 
 
-def build_pipeline_a(model, cat_cols, num_cols):
-    """管道A（线性模型）: OneHotEncoder + StandardScaler + median填补."""
-    cat_pipe = Pipeline(
-        [
-            ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
-            ("onehot", OneHotEncoder(sparse_output=False, handle_unknown="ignore")),
-        ]
+def build_pipeline_a(model):
+    """管道A（线性模型）: MissingValueImputer → FeatureEngineer → OneHot + StandardScaler + median填补."""
+    cat_pipe = Pipeline([
+        ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
+        ("onehot", OneHotEncoder(sparse_output=False, handle_unknown="ignore")),
+    ])
+    num_pipe = Pipeline([
+        ("impute_median", SimpleImputer(strategy="median")),
+        ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
+        ("scale", StandardScaler()),
+    ])
+    preprocessor = make_column_transformer(
+        (cat_pipe, _cat_sel), (num_pipe, _num_sel)
     )
-    num_pipe = Pipeline(
-        [
-            ("impute_median", SimpleImputer(strategy="median")),
-            ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
-            ("scale", StandardScaler()),
-        ]
-    )
-    preprocessor = ColumnTransformer(
-        [("cat", cat_pipe, cat_cols), ("num", num_pipe, num_cols)]
-    )
-    return Pipeline([("preprocessor", preprocessor), ("model", model)])
+    return Pipeline([
+        ("impute", MissingValueImputer()),
+        ("features", FeatureEngineer()),
+        ("preprocessor", preprocessor),
+        ("model", model),
+    ])
 
 
-def build_pipeline_b(model, cat_cols, num_cols):
-    """管道B（树模型）: OrdinalEncoder + median填补，无缩放."""
-    cat_pipe = Pipeline(
-        [
-            ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
-            (
-                "ordinal",
-                OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
-            ),
-        ]
+def build_pipeline_b(model):
+    """管道B（树模型）: MissingValueImputer → FeatureEngineer → OrdinalEncoder + median填补，无缩放."""
+    cat_pipe = Pipeline([
+        ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
+        ("ordinal", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)),
+    ])
+    num_pipe = Pipeline([
+        ("impute_median", SimpleImputer(strategy="median")),
+        ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
+    ])
+    preprocessor = make_column_transformer(
+        (cat_pipe, _cat_sel), (num_pipe, _num_sel)
     )
-    num_pipe = Pipeline(
-        [
-            ("impute_median", SimpleImputer(strategy="median")),
-            ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
-        ]
-    )
-    preprocessor = ColumnTransformer(
-        [("cat", cat_pipe, cat_cols), ("num", num_pipe, num_cols)]
-    )
-    return Pipeline([("preprocessor", preprocessor), ("model", model)])
+    return Pipeline([
+        ("impute", MissingValueImputer()),
+        ("features", FeatureEngineer()),
+        ("preprocessor", preprocessor),
+        ("model", model),
+    ])
 
 
-def build_pipeline_c(model, cat_cols, num_cols):
-    """管道C（SVR/GPR）: TargetEncoder + StandardScaler + log1p(y)变换."""
-    cat_pipe = Pipeline(
-        [
-            ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
-            ("target", TargetEncoder(target_type="continuous", smooth="auto")),
-        ]
+def build_pipeline_c(model):
+    """管道C（SVR/GPR）: MissingValueImputer → FeatureEngineer → TargetEncoder + StandardScaler + log1p(y)."""
+    cat_pipe = Pipeline([
+        ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
+        ("target", TargetEncoder(target_type="continuous", smooth="auto")),
+    ])
+    num_pipe = Pipeline([
+        ("impute_median", SimpleImputer(strategy="median")),
+        ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
+        ("scale", StandardScaler()),
+    ])
+    preprocessor = make_column_transformer(
+        (cat_pipe, _cat_sel), (num_pipe, _num_sel)
     )
-    num_pipe = Pipeline(
-        [
-            ("impute_median", SimpleImputer(strategy="median")),
-            ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
-            ("scale", StandardScaler()),
-        ]
-    )
-    preprocessor = ColumnTransformer(
-        [("cat", cat_pipe, cat_cols), ("num", num_pipe, num_cols)]
-    )
-    inner = Pipeline([("preprocessor", preprocessor), ("model", model)])
+    inner = Pipeline([
+        ("impute", MissingValueImputer()),
+        ("features", FeatureEngineer()),
+        ("preprocessor", preprocessor),
+        ("model", model),
+    ])
     return TransformedTargetRegressor(
         regressor=inner, func=np.log1p, inverse_func=np.expm1
     )
 
 
-def build_pipeline_d(cat_cols, num_cols):
-    """管道D（TabPFN）: OrdinalEncoder，无缩放/填补/调优."""
-    cat_pipe = Pipeline(
-        [
-            ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
-            (
-                "ordinal",
-                OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
-            ),
-        ]
-    )
-    preprocessor = ColumnTransformer(
-        [("cat", cat_pipe, cat_cols), ("num", "passthrough", num_cols)]
+def build_pipeline_d():
+    """管道D（TabPFN）: MissingValueImputer → FeatureEngineer → OrdinalEncoder，无缩放/填补/调优."""
+    cat_pipe = Pipeline([
+        ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
+        ("ordinal", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)),
+    ])
+    preprocessor = make_column_transformer(
+        (cat_pipe, _cat_sel), ("passthrough", _num_sel)
     )
     model = TabPFNRegressor(random_state=SEED)
-    return Pipeline([("preprocessor", preprocessor), ("model", model)])
+    return Pipeline([
+        ("impute", MissingValueImputer()),
+        ("features", FeatureEngineer()),
+        ("preprocessor", preprocessor),
+        ("model", model),
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -175,11 +189,7 @@ def build_pipeline_d(cat_cols, num_cols):
 
 
 def suggest_params(trial, model_name: str) -> dict:
-    """为给定模型返回一个参数字典，参数名带 `model__` 前缀以便 Pipeline 访问。
-
-    Optuna 内部参数名也带 `model__` 前缀，确保 study.best_params 可直接传递给
-    pipeline.set_params()。
-    """
+    """为给定模型返回参数字典，参数名带 `model__` 前缀以便 Pipeline 访问。"""
 
     if model_name == "Ridge":
         return {"model__alpha": trial.suggest_float("model__alpha", 1e-3, 1e4, log=True)}
@@ -200,9 +210,7 @@ def suggest_params(trial, model_name: str) -> dict:
         return {
             "model__n_estimators": trial.suggest_int("model__n_estimators", 100, 600),
             "model__max_depth": trial.suggest_int("model__max_depth", 3, 12),
-            "model__learning_rate": trial.suggest_float(
-                "model__learning_rate", 0.01, 0.3, log=True
-            ),
+            "model__learning_rate": trial.suggest_float("model__learning_rate", 0.01, 0.3, log=True),
             "model__subsample": trial.suggest_float("model__subsample", 0.6, 1.0),
             "model__colsample_bytree": trial.suggest_float("model__colsample_bytree", 0.6, 1.0),
             "model__reg_alpha": trial.suggest_float("model__reg_alpha", 1e-4, 10, log=True),
@@ -213,9 +221,7 @@ def suggest_params(trial, model_name: str) -> dict:
         return {
             "model__n_estimators": trial.suggest_int("model__n_estimators", 100, 600),
             "model__num_leaves": trial.suggest_int("model__num_leaves", 15, 255),
-            "model__learning_rate": trial.suggest_float(
-                "model__learning_rate", 0.01, 0.3, log=True
-            ),
+            "model__learning_rate": trial.suggest_float("model__learning_rate", 0.01, 0.3, log=True),
             "model__subsample": trial.suggest_float("model__subsample", 0.6, 1.0),
             "model__colsample_bytree": trial.suggest_float("model__colsample_bytree", 0.6, 1.0),
             "model__reg_alpha": trial.suggest_float("model__reg_alpha", 1e-4, 10, log=True),
@@ -227,9 +233,7 @@ def suggest_params(trial, model_name: str) -> dict:
         return {
             "model__n_estimators": trial.suggest_int("model__n_estimators", 100, 600),
             "model__max_depth": trial.suggest_int("model__max_depth", 3, 12),
-            "model__learning_rate": trial.suggest_float(
-                "model__learning_rate", 0.01, 0.3, log=True
-            ),
+            "model__learning_rate": trial.suggest_float("model__learning_rate", 0.01, 0.3, log=True),
             "model__subsample": trial.suggest_float("model__subsample", 0.6, 1.0),
             "model__min_samples_split": trial.suggest_int("model__min_samples_split", 2, 20),
             "model__min_samples_leaf": trial.suggest_int("model__min_samples_leaf", 1, 10),
@@ -256,104 +260,77 @@ def suggest_params(trial, model_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def get_all_models(X):
-    """返回全部9个模型的 (名称, 管道, 管道标签, Optuna参数函数或None) 列表。"""
-    cat_cols, num_cols = _get_column_lists(X)
+def get_all_models(X=None):
+    """返回全部9个模型的 (名称, 管道, 管道标签, Optuna参数函数或None) 列表。
 
+    X 参数保留以兼容旧调用，不再用于列检测（管道内使用 make_column_selector 动态检测）。
+    """
     models = []
 
     # --- 管道A: 线性基线 ---
-    models.append(
-        (
-            "Ridge",
-            build_pipeline_a(Ridge(random_state=SEED), cat_cols, num_cols),
-            "A",
-            lambda t: suggest_params(t, "Ridge"),
-        )
-    )
-    models.append(
-        (
-            "Lasso",
-            build_pipeline_a(Lasso(random_state=SEED, max_iter=5000), cat_cols, num_cols),
-            "A",
-            lambda t: suggest_params(t, "Lasso"),
-        )
-    )
+    models.append((
+        "Ridge",
+        build_pipeline_a(Ridge(random_state=SEED)),
+        "A",
+        lambda t: suggest_params(t, "Ridge"),
+    ))
+    models.append((
+        "Lasso",
+        build_pipeline_a(Lasso(random_state=SEED, max_iter=5000)),
+        "A",
+        lambda t: suggest_params(t, "Lasso"),
+    ))
 
     # --- 管道B: 树模型 ---
-    models.append(
-        (
-            "RF",
-            build_pipeline_b(
-                RandomForestRegressor(random_state=SEED), cat_cols, num_cols
-            ),
-            "B",
-            lambda t: suggest_params(t, "RF"),
-        )
-    )
-    models.append(
-        (
-            "XGBoost",
-            build_pipeline_b(
-                XGBRegressor(random_state=SEED, verbosity=0), cat_cols, num_cols
-            ),
-            "B",
-            lambda t: suggest_params(t, "XGBoost"),
-        )
-    )
-    models.append(
-        (
-            "LightGBM",
-            build_pipeline_b(
-                LGBMRegressor(random_state=SEED, verbose=-1), cat_cols, num_cols
-            ),
-            "B",
-            lambda t: suggest_params(t, "LightGBM"),
-        )
-    )
-    models.append(
-        (
-            "GBDT",
-            build_pipeline_b(
-                GradientBoostingRegressor(random_state=SEED), cat_cols, num_cols
-            ),
-            "B",
-            lambda t: suggest_params(t, "GBDT"),
-        )
-    )
+    models.append((
+        "RF",
+        build_pipeline_b(RandomForestRegressor(random_state=SEED)),
+        "B",
+        lambda t: suggest_params(t, "RF"),
+    ))
+    models.append((
+        "XGBoost",
+        build_pipeline_b(XGBRegressor(random_state=SEED, verbosity=0)),
+        "B",
+        lambda t: suggest_params(t, "XGBoost"),
+    ))
+    models.append((
+        "LightGBM",
+        build_pipeline_b(LGBMRegressor(random_state=SEED, verbose=-1)),
+        "B",
+        lambda t: suggest_params(t, "LightGBM"),
+    ))
+    models.append((
+        "GBDT",
+        build_pipeline_b(GradientBoostingRegressor(random_state=SEED)),
+        "B",
+        lambda t: suggest_params(t, "GBDT"),
+    ))
 
     # --- 管道C: SVR / GPR ---
-    models.append(
-        (
-            "SVR",
-            build_pipeline_c(SVR(kernel="rbf"), cat_cols, num_cols),
-            "C",
-            lambda t: suggest_params(t, "SVR"),
-        )
-    )
-    models.append(
-        (
-            "GPR",
-            build_pipeline_c(
-                GaussianProcessRegressor(
-                    kernel=ConstantKernel() * RBF() + WhiteKernel(),
-                    normalize_y=True,
-                    n_restarts_optimizer=10,
-                    random_state=SEED,
-                ),
-                cat_cols,
-                num_cols,
-            ),
-            "C",
-            lambda t: suggest_params(t, "GPR"),
-        )
-    )
+    models.append((
+        "SVR",
+        build_pipeline_c(SVR(kernel="rbf")),
+        "C",
+        lambda t: suggest_params(t, "SVR"),
+    ))
+    models.append((
+        "GPR",
+        build_pipeline_c(
+            GaussianProcessRegressor(
+                kernel=ConstantKernel() * RBF() + WhiteKernel(),
+                normalize_y=True,
+                n_restarts_optimizer=10,
+                random_state=SEED,
+            )
+        ),
+        "C",
+        lambda t: suggest_params(t, "GPR"),
+    ))
 
     # --- 管道D: TabPFN（零超参）---
     if TABPFN_READY:
-        models.append(
-            ("TabPFN", build_pipeline_d(cat_cols, num_cols), "D", None)
-        )
+        models.append(("TabPFN", build_pipeline_d(), "D", None))
 
     return models
 
@@ -367,33 +344,21 @@ def main():
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
     from src.data_loader import load_and_clean
-    from src.preprocessing import MissingValueImputer
-    from src.feature_engineering import FeatureEngineer
 
-    # ---- 数据准备 ----
     print("加载数据 ...")
     df = load_and_clean()
-    df = MissingValueImputer().fit_transform(df)
-    df = FeatureEngineer().fit_transform(df)
 
     X = df.drop(columns=[TARGET])
     y = df[TARGET]
 
-    cat_cols, num_cols = _get_column_lists(X)
     print(f"\n特征维度: {X.shape}")
-    print(f"  分类列 ({len(cat_cols)}): {cat_cols}")
-    print(f"  数值列 ({len(num_cols)}): {num_cols}")
     print(f"  目标变量: {TARGET}  (均值={y.mean():.1f}, 标准差={y.std():.1f})")
 
-    # ---- 获取所有模型 ----
-    all_models = get_all_models(X)
+    all_models = get_all_models()
     print(f"\n{'='*60}")
-    print(f"共 {len(all_models)} 个模型")
+    print(f"共 {len(all_models)} 个模型（管道内已包含 MissingValueImputer + FeatureEngineer）")
     if HAS_TABPFN and not TABPFN_READY:
         print("注意: TabPFN 已安装但未完成许可接受，暂未加入模型列表")
-        print("  请运行以下命令完成一次性认证（需要浏览器）:")
-        print("  python -c \"from tabpfn import TabPFNRegressor; import numpy as np;")
-        print("  TabPFNRegressor().fit(np.array([[1.0]]), np.array([1.0]))\"")
     print(f"{'='*60}")
 
     for name, pipe, label, param_fn in all_models:

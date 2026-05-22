@@ -123,7 +123,7 @@ def compute_spearman_clusters(X_num: pd.DataFrame, threshold: float = 0.7) -> pd
 
 
 def compute_tabpfn_permutation_importance(
-    model, X: pd.DataFrame, y: pd.Series, n_repeats: int = 30, random_state: int = 42
+    model, X: pd.DataFrame, y: pd.Series, n_repeats: int = 30, random_state: int = SEED
 ) -> pd.DataFrame:
     """对 TabPFN 模型计算排列特征重要性（RMSE增量）。
 
@@ -160,23 +160,31 @@ def compute_gbdt_shap(
 ) -> dict:
     """用 TreeExplainer 计算 GBDT 模型的 SHAP 值。
 
+    pipeline 结构: impute → features → preprocessor → model
+    X: 原始DataFrame（未经任何预处理）
+    feature_names: FeatureEngineer 输出后的特征名列表
+
     Returns
     -------
     dict with keys: shap_values, explainer, X_transformed, shap_importance
     """
     print("  计算 GBDT SHAP 值 (TreeExplainer)...")
 
+    imputer = pipeline.named_steps["impute"]
+    engineer = pipeline.named_steps["features"]
     preprocessor = pipeline.named_steps["preprocessor"]
     model = pipeline.named_steps["model"]
 
-    X_transformed = preprocessor.transform(X)
+    # 逐级变换: raw → imputed → feature-engineered → model-ready
+    X_imputed = imputer.transform(X)
+    X_fe = engineer.transform(X_imputed)
+    X_transformed = preprocessor.transform(X_fe)
 
     explainer = shap.TreeExplainer(model)
     shap_vals = explainer.shap_values(X_transformed)
 
     # 特征重要性 = mean(|SHAP|)
     if shap_vals.ndim == 3:
-        # multi-output case — take first output
         shap_vals = shap_vals[:, :, 0] if shap_vals.shape[2] == 1 else shap_vals[:, :, 0]
 
     importance = np.abs(shap_vals).mean(axis=0)
@@ -224,26 +232,30 @@ def compute_consistency(
 
 def main():
     from src.data_loader import load_and_clean
-    from src.preprocessing import MissingValueImputer
-    from src.feature_engineering import FeatureEngineer
 
     print("=" * 60)
     print("步骤6: SHAP 可解释性分析")
     print("=" * 60)
 
-    # ---- 数据准备 ----
-    print("\n[1/5] 加载并处理数据...")
+    # ---- 数据准备（仅加载，预处理由最终模型Pipeline内部完成）----
+    print("\n[1/5] 加载数据...")
     df = load_and_clean()
-    df = MissingValueImputer().fit_transform(df)
-    df = FeatureEngineer().fit_transform(df)
-
-    X = df.drop(columns=[TARGET])
+    X_raw = df.drop(columns=[TARGET])
     y = df[TARGET]
 
-    cat_cols, num_cols = _get_column_lists(X)
+    # 用已保存的GBDT最终模型Pipeline做预处理以获取数值特征（供VIF/聚类使用）
+    gbdt_path = ROOT / "outputs" / "models" / "GBDT_final.pkl"
+    gbdt_pipe = joblib.load(gbdt_path)
+    # 仅跑Pipeline的前两步: impute → features
+    imputer = gbdt_pipe.named_steps["impute"]
+    engineer = gbdt_pipe.named_steps["features"]
+    X_imputed = imputer.transform(X_raw)
+    X_fe = engineer.transform(X_imputed)
+
+    cat_cols, num_cols = _get_column_lists(X_fe)
     print(f"  数值特征 ({len(num_cols)}): {num_cols}")
     print(f"  分类特征 ({len(cat_cols)}): {cat_cols}")
-    print(f"  样本数: {len(X)}, 特征总数: {X.shape[1]}")
+    print(f"  样本数: {len(X_raw)}, 输入特征数: {X_raw.shape[1]}")
 
     # ---- 输出目录 ----
     tables_dir = ROOT / "outputs" / "tables"
@@ -253,7 +265,7 @@ def main():
     # 2a. VIF 多重共线性诊断
     # ========================================================================
     print("\n[2/5] VIF 多重共线性诊断...")
-    X_num = X[num_cols].copy()
+    X_num = X_fe[num_cols].copy()
     # 填充正则提取留下的 NaN（工艺未执行 → 中位数填充，仅用于 VIF 计算）
     X_num_imputed = pd.DataFrame(
         SimpleImputer(strategy="median").fit_transform(X_num),
@@ -289,7 +301,7 @@ def main():
     print(f"  已保存: {tables_dir / 'spearman_correlation.csv'}")
 
     # ========================================================================
-    # 3a. TabPFN 排列重要性
+    # 3a. TabPFN 排列重要性（输入原始DataFrame，Pipeline内部处理预处理）
     # ========================================================================
     print("\n[4/5] TabPFN 排列重要性...")
     tabpfn_csv = tables_dir / "permutation_importance_tabpfn.csv"
@@ -300,7 +312,7 @@ def main():
         tabpfn_path = ROOT / "outputs" / "models" / "TabPFN_final.pkl"
         tabpfn_pipe = joblib.load(tabpfn_path)
         tabpfn_imp = compute_tabpfn_permutation_importance(
-            tabpfn_pipe, X, y, n_repeats=5, random_state=SEED
+            tabpfn_pipe, X_raw, y, n_repeats=5, random_state=SEED
         )
         tabpfn_imp.to_csv(tabpfn_csv, index=False, encoding="utf-8-sig")
         print(f"  已保存: {tabpfn_csv}")
@@ -310,9 +322,9 @@ def main():
         print(f"    {row['feature']}: {row['importance_mean']:.2f} +- {row['importance_std']:.2f}")
 
     # ========================================================================
-    # 3b. GBDT SHAP 分析
+    # 3b. GBDT SHAP 分析 —— 使用 FeatureEngineer 后的特征名
     # ========================================================================
-    # GBDT 管道B: 特征顺序 = 分类列 (OrdinalEncoded) + 数值列 (passthrough)
+    # GBDT 管道B: 变换后特征顺序 = 分类列 (OrdinalEncoded) + 数值列 (passthrough)
     feature_names = cat_cols + num_cols
 
     shap_csv = tables_dir / "shap_importance_gbdt.csv"
@@ -324,9 +336,8 @@ def main():
         }
     else:
         print("\n[5/5] GBDT SHAP 分析 (TreeExplainer)...")
-        gbdt_path = ROOT / "outputs" / "models" / "GBDT_final.pkl"
-        gbdt_pipe = joblib.load(gbdt_path)
-        shap_result = compute_gbdt_shap(gbdt_pipe, X, feature_names)
+        # gbdt_pipe 已在上面加载，传入原始DataFrame
+        shap_result = compute_gbdt_shap(gbdt_pipe, X_raw, feature_names)
 
         shap_df = pd.DataFrame(shap_result["shap_values"], columns=feature_names)
         shap_df.to_csv(tables_dir / "shap_values_gbdt.csv", index=False, encoding="utf-8-sig")
