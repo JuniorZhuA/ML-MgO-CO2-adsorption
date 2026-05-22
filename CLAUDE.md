@@ -61,7 +61,7 @@ plotting.py             → 8张论文图, 300DPI
 - [x] 步骤6: shap_analysis.py — VIF(11高共线) + Spearman聚类(9簇) + TabPFN排列重要性 + GBDT TreeExplainer SHAP + 一致性 Spearman ρ=0.8796
 - [x] 步骤7: plotting.py — Figure 1 完成 (Spearman相关热力图, 17特征, Ward聚类排序, RdBu柔和配色, 18×17", 300 DPI)
 - [x] TOPSIS: src/topsis.py — 熵权法 + CRITIC 双方案综合排名，对比表对齐已修复
-- [ ] Figure 2–8
+- [x] Figure 2–8 (全部8张论文图完成, 300 DPI, 保存至 outputs/figures/)
 - [ ] Notebooks 01-07
 
 ## 运行方式
