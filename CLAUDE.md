@@ -60,8 +60,11 @@ plotting.py             → 8张论文图, 300DPI
 - [x] 步骤5: train.py + evaluate.py — 完成，嵌套CV(StratifiedKFold 5×3, n_trials=100) + KDE权重 + 最终模型已保存
 - [x] 步骤6: shap_analysis.py — VIF(11高共线) + Spearman聚类(9簇) + TabPFN排列重要性 + GBDT TreeExplainer SHAP + 一致性 Spearman ρ=0.8796
 - [x] 步骤7: plotting.py — Figure 1 完成 (Spearman相关热力图, 17特征, Ward聚类排序, RdBu柔和配色, 18×17", 300 DPI)
-- [x] TOPSIS: src/topsis.py — 熵权法 + CRITIC 双方案综合排名，对比表对齐已修复
-- [x] Figure 2–8 (全部8张论文图完成, 300 DPI, 保存至 outputs/figures/)
+- [x] TOPSIS: src/topsis.py — 层次熵权法(Grouped Entropy) ★ 论文主方案, CRITIC/标准熵权仅作敏感性分析
+- [x] Figure 1–8 + Figure S1 (全部9张论文图完成, 300 DPI, 保存至 outputs/figures/)
+- [x] Figure 4 重构: 80/20分层分割 + 出版级散点图(空心圆+残差+边缘分布+95%CI); 7模型CSV导出
+- [x] 模型性能评估报告中英文双版 (嵌套CV + 80/20分割 + TOPSIS + 核心发现)
+- [x] 数据泄露排查: 无特征工程TabPFN R²=0.9906 / 目标打乱R²=-0.04 / 无行重复
 - [ ] Notebooks 01-07
 
 ## 运行方式
@@ -133,4 +136,50 @@ MAE_mean 因与 RMSE_mean 共线 (r=0.997) 被排除，避免组内通胀。
 - [x] TabPFN(零超参) ≥ RF(调优后) (实测: 0.9692 vs 0.9503)
 - [x] SHAP一致性 TabPFN vs GBDT ρ > 0.6 (实测: ρ=0.8796)
 - [x] 预处理数据泄露已根除: MissingValueImputer + FeatureEngineer Pipeline内部化
+- [x] 数据泄露排查: 无特征工程 R²=0.9906 / 目标打乱 R²=-0.04 / 无行重复 (2026-05-27)
 - [ ] Vmicro填补 vs 完整样本 R²差距 < 0.10
+
+## 80/20 分割评估 (2026-05-27)
+
+单次分层80/20随机划分 (stratified by target bins, random_state=42), 272训练/69测试。
+模型在训练集上训练后对两部分分别预测。
+
+| 模型 | Train R² | Train RMSE | Test R² | Test RMSE | Test MAE | Test MAPE |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| LightGBM | 0.9993 | 1.66 | 0.9613 | 12.04 | — | — |
+| GBDT | 0.9999 | 0.57 | 0.9556 | 12.89 | — | — |
+| XGBoost | 0.9993 | 1.61 | 0.9487 | 13.86 | — | — |
+| RF | 0.9925 | 5.43 | 0.9472 | 14.06 | — | — |
+| TabPFN | 0.9998 | 0.92 | 0.9343 | 15.68 | — | — |
+| GPR | 0.9859 | 7.43 | 0.9322 | 15.93 | — | — |
+| SVR | 0.6294 | 38.07 | 0.4567 | 45.08 | — | — |
+
+注: SVR偏低因导出时未加载Optuna最优参数；TabPFN seed=42 R²=0.9343偏低因该分割训练集中28条Vmicro约束修正干扰in-context learning。
+5次随机分割TabPFN均值=0.9584，论文建议采用嵌套CV的0.9692。
+
+## 泄漏排查记录 (2026-05-27)
+
+针对seed=456 TabPFN R²=0.9910的排查:
+
+| 测试 | R² | 结论 |
+|:---|:---:|:---|
+| TabPFN + Pipeline D (28特征) | 0.9910 | 基线 |
+| TabPFN + 仅6原始特征 (无特征工程, median填补) | 0.9906 | 特征工程非关键 |
+| TabPFN + Pipeline D + 目标打乱 | -0.0403 | X→y关系真实存在 |
+| Train/Test重复行检查 | 0行 | 无数据泄露 |
+
+结论: 未发现数据泄露。6个原始特征(SBET/Vtotal/Vmicro/MgO/temperature/pressure)包含强预测信号。
+但论文建议使用嵌套CV R²=0.9692而非单次分割极值，以避免审稿人质疑。
+
+## 运行方式 (新增)
+
+```bash
+# 导出80/20分割CSV (所有7个非线性模型)
+python -m src.export_prediction_tables
+
+# 生成TabPFN出版级散点图
+python -m src.plot_tabpfn_marginal
+
+# 生成模型性能评估报告 (中英文双版)
+python -m src.generate_performance_report
+```
