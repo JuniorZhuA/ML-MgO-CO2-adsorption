@@ -250,6 +250,104 @@ def figure_2_boxplot() -> plt.Figure:
     return fig
 
 
+def figure_S1_precursor_distribution() -> plt.Figure:
+    """Figure S1: 不同碳前驱体类型的 CO₂ 吸附量分布 (300 DPI)
+
+    按碳前驱体类型分组展示 CO₂ uptake 分布，n<10 的类别合并为 Other，
+    "saw dust" 合并入 "sawdust"，按中位数降序排列。
+    """
+
+    from src.data_loader import load_and_clean
+    from src.preprocessing import MissingValueImputer
+    from src.feature_engineering import FeatureEngineer
+
+    print("加载预处理数据...")
+    df = load_and_clean()
+    df = MissingValueImputer().fit_transform(df)
+    df = FeatureEngineer().fit_transform(df)
+
+    # 合并拼写变体: "saw dust" → "sawdust"
+    df["carbon_precursors"] = df["carbon_precursors"].replace({"saw dust": "sawdust"})
+
+    # 合并 n<10 为 "Other"
+    counts = df["carbon_precursors"].value_counts()
+    small_cats = counts[counts < 10].index.tolist()
+    df["carbon_precursors"] = df["carbon_precursors"].replace(
+        {c: f"Other (n<10, {len(small_cats)} types)" for c in small_cats}
+    )
+
+    # 按中位数降序排列，Other 固定在最后
+    order = (
+        df.groupby("carbon_precursors")["CO2_uptake_mg_g"]
+        .median()
+        .sort_values(ascending=False)
+        .index
+        .tolist()
+    )
+    other_cats = [c for c in order if "Other" in c]
+    other_cats.sort()  # 多个Other按字母序
+    order = [c for c in order if c not in other_cats] + other_cats
+
+    # 标注各类别样本量
+    label_counts = df["carbon_precursors"].value_counts()
+    labels = [f"{cat}\n(n={label_counts[cat]})" for cat in order]
+
+    n_cats = len(order)
+    fig_h = max(4.5, n_cats * 0.55)
+
+    # ── 横向箱线图 ─────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(10, fig_h))
+
+    palette = ["#5DADE2"] * len(order)
+
+    bp = sns.boxplot(
+        data=df,
+        y="carbon_precursors",
+        x="CO2_uptake_mg_g",
+        order=order,
+        palette=palette,
+        linewidth=0.8,
+        fliersize=2.5,
+        flierprops={"marker": "o", "markersize": 2.5, "alpha": 0.4},
+        ax=ax,
+    )
+
+    # 叠加散点 (strip plot)
+    sns.stripplot(
+        data=df,
+        y="carbon_precursors",
+        x="CO2_uptake_mg_g",
+        order=order,
+        color="black",
+        size=2.5,
+        alpha=0.3,
+        jitter=True,
+        ax=ax,
+    )
+
+    ax.set_yticklabels(labels, fontsize=10.5, fontweight="bold")
+    ax.set_xlabel("CO₂ Uptake (mg/g)", fontsize=13, fontweight="bold")
+    ax.set_ylabel("")
+    ax.tick_params(labelsize=10)
+
+    # x 轴从 0 开始
+    ax.set_xlim(-5, df["CO2_uptake_mg_g"].max() * 1.06)
+
+    title = f"CO₂ Uptake Distribution by Carbon Precursor Type (n={len(df)})"
+    ax.set_title(title, fontsize=14, fontweight="bold", pad=12)
+
+    # ── 保存 ─────────────────────────────────────────────────────────
+    fig.tight_layout()
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    output_path = FIGURES / "Figure_S1_Precursor_Distribution.png"
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
+    print(f"\n[OK] 已保存: {output_path}")
+    print(f"     分辨率: 300 DPI, 类别数: {n_cats}, 合并小类: {small_cats}")
+
+    plt.close("all")
+    return fig
+
+
 def figure_3_model_comparison() -> plt.Figure:
     """Figure 3: 模型性能对比横向柱状图 — R² + RMSE 双面板 (300 DPI)
 
@@ -359,114 +457,196 @@ def figure_3_model_comparison() -> plt.Figure:
     return fig
 
 
-def figure_4_pred_vs_exp() -> plt.Figure:
-    """Figure 4: 预测值 vs 实验值散点图 — 3×3 网格，按 SBET 着色 (300 DPI)"""
+def figure_4_tabpfn_marginal() -> plt.Figure:
+    """Figure 4: TabPFN 带边缘分布 + 残差图 (300 DPI)
 
+    GridSpec 3行×6列, hspace/wspace=0, sharex/sharey 共用脊柱:
+    - 顶部: gaussian_kde 密度 (sharex, 底边=主体顶边X轴)
+    - 主体: 散点 + y=x + 线性回归 + sns.regplot 95%CI
+    - 右侧: gaussian_kde 密度 (sharey, 左边=主体右边Y轴)
+    - 底部: 残差散点 (sharex, 顶边=主体底边X轴)
+    """
+
+    import json
     import joblib
     from sklearn.metrics import r2_score, mean_squared_error
-    from src.data_loader import load_and_clean
-    from src.preprocessing import MissingValueImputer
-    from src.feature_engineering import FeatureEngineer
+    from scipy.stats import linregress
+    from matplotlib.gridspec import GridSpec
     from src.config import ROOT
+    from src.data_loader import load_and_clean
 
-    print("加载数据与预处理...")
+    model_name = "TabPFN"
+
+    print("加载数据...")
     df = load_and_clean()
     y_true = df[TARGET].values
 
-    # 独立预处理以获取 SBET 用于着色
-    df_processed = MissingValueImputer().fit_transform(df)
-    df_processed = FeatureEngineer().fit_transform(df_processed)
-    sbet = df_processed["SBET_m2_g"].values
+    cv_path = ROOT / "outputs" / "tables" / "cv_predictions.json"
+    with open(cv_path, "r", encoding="utf-8") as f:
+        cv_data = json.load(f)
 
-    # 加载模型并预测
     models_dir = ROOT / "outputs" / "models"
-    model_names = ["TabPFN", "GBDT", "RF", "XGBoost", "LightGBM", "GPR", "SVR", "Ridge", "Lasso"]
-    pipeline_labels = ["D", "B", "B", "B", "B", "C", "C", "A", "A"]
+    pipe = joblib.load(models_dir / f"{model_name}_final.pkl")
+    tr_preds = pipe.predict(df.drop(columns=[TARGET]))
+    if tr_preds.ndim == 2 and tr_preds.shape[1] == 1:
+        tr_preds = tr_preds.ravel()
 
-    predictions: dict[str, np.ndarray] = {}
-    for name in model_names:
-        path = models_dir / f"{name}_final.pkl"
-        pipe = joblib.load(path)
-        X_raw = df.drop(columns=[TARGET])
-        preds = pipe.predict(X_raw)
-        if preds.ndim == 2 and preds.shape[1] == 1:
-            preds = preds.ravel()
-        predictions[name] = preds
-        print(f"  {name}: R²={r2_score(y_true, preds):.4f}, RMSE={np.sqrt(mean_squared_error(y_true, preds)):.1f}")
+    cv_preds = np.array(cv_data[model_name]["y_pred"])
 
-    # ── 绘图 ─────────────────────────────────────────────────────────────
-    n_models = len(model_names)
-    n_cols = 3
-    n_rows = int(np.ceil(n_models / n_cols))
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 17))
-    axes = axes.flatten()
+    r2_train = r2_score(y_true, tr_preds)
+    rmse_train = np.sqrt(mean_squared_error(y_true, tr_preds))
+    r2_test = r2_score(y_true, cv_preds)
+    rmse_test = np.sqrt(mean_squared_error(y_true, cv_preds))
+    print(f"  {model_name}: Train R²={r2_train:.4f} RMSE={rmse_train:.1f} | "
+          f"Test R²={r2_test:.4f} RMSE={rmse_test:.1f}")
 
-    # SBET 颜色归一化
-    sbet_clean = sbet[~np.isnan(sbet)]
-    norm = plt.Normalize(sbet_clean.min(), sbet_clean.max())
-    cmap = plt.cm.viridis
+    # ── 配色 ─────────────────────────────────────────────────────────────
+    TRAIN_FILL  = "#F4A8A0"
+    TRAIN_LINE  = "#C62828"
+    TEST_FILL   = "#A0C8E8"
+    TEST_LINE   = "#0D47A1"
 
-    for idx, (name, ax) in enumerate(zip(model_names, axes)):
-        preds = predictions[name]
-        r2 = r2_score(y_true, preds)
-        rmse = np.sqrt(mean_squared_error(y_true, preds))
+    lo = min(y_true.min(), cv_preds.min(), tr_preds.min()) - 8
+    hi = max(y_true.max(), cv_preds.max(), tr_preds.max()) + 8
 
-        # 有效 SBET 的点用颜色映射，NaN 用灰色
-        mask_valid = ~np.isnan(sbet)
-        scatter = ax.scatter(
-            y_true[mask_valid], preds[mask_valid],
-            c=sbet[mask_valid], cmap=cmap, norm=norm,
-            s=18, edgecolors="none", alpha=0.75, zorder=3,
-        )
-        if not mask_valid.all():
-            ax.scatter(
-                y_true[~mask_valid], preds[~mask_valid],
-                c="#BDBDBD", s=18, edgecolors="none", alpha=0.5, zorder=2,
-            )
+    # ── GridSpec: 主体先建, 边缘共享轴 ──────────────────────────────────
+    fig = plt.figure(figsize=(9, 9))
+    gs = GridSpec(3, 6, figure=fig,
+                  height_ratios=[1, 5, 1.3],
+                  width_ratios=[1, 1, 1, 1, 1, 1],
+                  hspace=0.00, wspace=0.00,
+                  left=0.085, right=0.935, top=0.95, bottom=0.085)
 
-        # y=x 对角线
-        lims = [min(y_true.min(), preds.min()) - 5,
-                max(y_true.max(), preds.max()) + 5]
-        ax.plot(lims, lims, "k--", linewidth=0.8, alpha=0.6, zorder=1)
-        ax.set_xlim(lims)
-        ax.set_ylim(lims)
+    ax_main  = fig.add_subplot(gs[1, :5])        # 主体
+    ax_top   = fig.add_subplot(gs[0, :5], sharex=ax_main)   # 顶部KDE, 底边=主体顶边
+    ax_right = fig.add_subplot(gs[1, 5], sharey=ax_main)    # 右侧KDE, 左边=主体右边
+    ax_resid = fig.add_subplot(gs[2, :5], sharex=ax_main)   # 残差, 顶边=主体底边
 
-        # 标注
-        ax.text(0.05, 0.92, f"{name}", transform=ax.transAxes,
-                fontsize=11, fontweight="bold", va="top",
-                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.85))
-        ax.text(0.05, 0.80, f"R²={r2:.4f}\nRMSE={rmse:.1f}", transform=ax.transAxes,
-                fontsize=8.5, va="top", color="#424242",
-                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", alpha=0.7))
+    # ══════════════════════════════════════════════════════════════════════
+    # 主体散点图
+    # ══════════════════════════════════════════════════════════════════════
 
-        ax.set_xlabel("Experimental CO₂ uptake (mg/g)", fontsize=9, fontweight="bold")
-        ax.set_ylabel("Predicted CO₂ uptake (mg/g)", fontsize=9, fontweight="bold")
-        ax.tick_params(labelsize=8)
-        ax.set_aspect("equal")
+    # 训练集: 浅粉圆点
+    ax_main.scatter(y_true, tr_preds, c=TRAIN_FILL, marker="o", s=26,
+                    edgecolors="white", linewidths=0.3, alpha=0.65, zorder=3,
+                    label="Train")
+    # 测试集: 浅蓝三角
+    ax_main.scatter(y_true, cv_preds, c=TEST_FILL, marker="^", s=30,
+                    edgecolors="white", linewidths=0.3, alpha=0.7, zorder=4,
+                    label="Test")
 
-    # 隐藏多余子图
-    for j in range(n_models, len(axes)):
-        axes[j].set_visible(False)
+    # y=x 理想线
+    ax_main.plot([lo, hi], [lo, hi], "k--", linewidth=0.8, alpha=0.45, zorder=1)
 
-    # 统一颜色条
-    cbar_ax = fig.add_axes([0.92, 0.08, 0.012, 0.84])
-    cbar = fig.colorbar(scatter, cax=cbar_ax)
-    cbar.set_label("SBET (m²/g)", fontsize=12, fontweight="bold")
-    cbar.ax.tick_params(labelsize=9)
-    for label in cbar.ax.get_yticklabels():
-        label.set_fontweight("bold")
+    # 训练集线性回归 (红线, 无CI)
+    sl_tr, ic_tr, _, _, _ = linregress(y_true, tr_preds)
+    x_fit = np.linspace(lo, hi, 200)
+    ax_main.plot(x_fit, sl_tr * x_fit + ic_tr,
+                 color=TRAIN_LINE, linewidth=1.5, zorder=5)
 
-    fig.suptitle("Predicted vs. Experimental CO₂ Uptake", fontsize=15,
-                 fontweight="bold", y=0.98)
+    # 测试集: 线性回归 + 95% 参数化 CI (手算, 避免sns.regplot bootstrap线条)
+    sl_te, ic_te, r_te, _, std_err = linregress(y_true, cv_preds)
+    ax_main.plot(x_fit, sl_te * x_fit + ic_te,
+                 color=TEST_LINE, linewidth=1.8, zorder=6)
+    # 参数化 95% CI: y_pred ± t_0.025 * SE
+    from scipy.stats import t as t_dist
+    n = len(y_true)
+    t_crit = t_dist.ppf(0.975, n - 2)
+    x_mean = np.mean(y_true)
+    ssx = np.sum((y_true - x_mean) ** 2)
+    se_fit = std_err * np.sqrt(1 / n + (x_fit - x_mean) ** 2 / ssx)
+    ci_upper = sl_te * x_fit + ic_te + t_crit * se_fit
+    ci_lower = sl_te * x_fit + ic_te - t_crit * se_fit
+    ax_main.fill_between(x_fit, ci_lower, ci_upper,
+                         color=TEST_LINE, alpha=0.12, edgecolor="none", zorder=5)
+
+    ax_main.set_xlim(lo, hi)
+    ax_main.set_ylim(lo, hi)
+    ax_main.set_aspect("equal")
+
+    # 图例 (左上)
+    ax_main.legend(loc="upper left", fontsize=9, frameon=True,
+                   fancybox=True, markerscale=1.1)
+
+    # R² 标注 (右下)
+    r2_text = (f"Train R² = {r2_train:.4f}\nTest R² = {r2_test:.4f}")
+    ax_main.text(0.96, 0.055, r2_text, transform=ax_main.transAxes,
+                 fontsize=9.5, fontweight="bold", va="bottom", ha="right",
+                 color="#37474F", family="monospace",
+                 bbox=dict(boxstyle="round,pad=0.35", facecolor="white",
+                           edgecolor="#BDBDBD", linewidth=0.5, alpha=0.9))
+
+    ax_main.grid(False)
+    ax_main.set_xlabel("Experimental CO₂ Uptake (mg/g)", fontsize=13,
+                       fontweight="bold")
+    ax_main.set_ylabel("Predicted CO₂ Uptake (mg/g)", fontsize=13,
+                       fontweight="bold")
+    ax_main.tick_params(labelsize=9.5)
+    ax_main.set_title(model_name, fontsize=15, fontweight="bold", pad=5)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 顶部边缘: X 轴密度 (gaussian_kde, sharex → 底边=主体顶边)
+    # ══════════════════════════════════════════════════════════════════════
+    from scipy.stats import gaussian_kde
+    x_grid = np.linspace(lo, hi, 300)
+    kde_x = gaussian_kde(y_true)
+    ax_top.fill_between(x_grid, kde_x(x_grid), alpha=0.25,
+                        color=TRAIN_LINE, edgecolor="none")
+    ax_top.plot(x_grid, kde_x(x_grid), color=TRAIN_LINE, linewidth=1.5)
+
+    ax_top.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
+    for s in ax_top.spines.values():
+        s.set_visible(False)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 右侧边缘: Y 轴密度 (gaussian_kde, sharey → 左边=主体右边)
+    # ══════════════════════════════════════════════════════════════════════
+    y_grid = np.linspace(lo, hi, 300)
+    kde_tr_y = gaussian_kde(tr_preds)
+    kde_te_y = gaussian_kde(cv_preds)
+    ax_right.fill_betweenx(y_grid, kde_tr_y(y_grid), alpha=0.18,
+                           color=TRAIN_LINE, edgecolor="none")
+    ax_right.plot(kde_tr_y(y_grid), y_grid, color=TRAIN_LINE, linewidth=1.3,
+                  label="Train")
+    ax_right.fill_betweenx(y_grid, kde_te_y(y_grid), alpha=0.22,
+                           color=TEST_LINE, edgecolor="none")
+    ax_right.plot(kde_te_y(y_grid), y_grid, color=TEST_LINE, linewidth=1.5,
+                  label="Test")
+
+    ax_right.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
+    ax_right.legend(fontsize=7, loc="upper right", frameon=True, fancybox=True)
+    for s in ax_right.spines.values():
+        s.set_visible(False)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 底部残差图: Y = Predicted − True (sharex=主体 → 顶部脊柱共用)
+    # ══════════════════════════════════════════════════════════════════════
+    resid_train = tr_preds - y_true
+    resid_test  = cv_preds - y_true
+
+    ax_resid.axhline(y=0, color="gray", linewidth=0.7, linestyle="--",
+                     alpha=0.55, zorder=1)
+
+    ax_resid.scatter(y_true, resid_train, c=TRAIN_FILL, marker="o", s=16,
+                     edgecolors="white", linewidths=0.2, alpha=0.55, zorder=2)
+    ax_resid.scatter(y_true, resid_test, c=TEST_FILL, marker="^", s=20,
+                     edgecolors="white", linewidths=0.2, alpha=0.6, zorder=3)
+
+    r_abs = max(abs(resid_train).max(), abs(resid_test).max()) * 1.2
+    ax_resid.set_ylim(-r_abs, r_abs)
+
+    ax_resid.grid(False)
+    ax_resid.set_xlabel("Experimental CO₂ Uptake (mg/g)", fontsize=13,
+                        fontweight="bold")
+    ax_resid.set_ylabel("Residuals (mg/g)", fontsize=12, fontweight="bold")
+    ax_resid.tick_params(labelsize=9)
 
     # ── 保存 ─────────────────────────────────────────────────────────────
     FIGURES.mkdir(parents=True, exist_ok=True)
-    output_path = FIGURES / "Figure_4_Pred_vs_Exp.png"
+    output_path = FIGURES / f"Figure_4_{model_name}_Marginal.png"
     fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
-    print(f"\n[OK] 已保存: {output_path}")
-    print(f"     分辨率: 300 DPI, 模型数: {n_models}")
-
-    plt.close("all")
+    print(f"  [OK] 已保存: {output_path}")
+    plt.close(fig)
     return fig
 
 
@@ -925,52 +1105,59 @@ if __name__ == "__main__":
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--figure", type=int, default=0, help="指定图号 (0=全部)")
+    parser.add_argument("--figure", type=str, default="0", help="指定图号 (0=全部, 或 1-8, S1)")
     args = parser.parse_args()
+    fig_arg = args.figure.upper()
 
-    if args.figure == 0 or args.figure == 1:
+    if fig_arg in ("0", "S1"):
+        print("=" * 60)
+        print("Figure S1: 不同碳前驱体类型的 CO₂ 吸附量分布")
+        print("=" * 60)
+        figure_S1_precursor_distribution()
+
+    if fig_arg == "0" or fig_arg == "1":
         print("=" * 60)
         print("Figure 1: Spearman 相关矩阵热力图")
         print("=" * 60)
         figure_1_clustermap()
 
-    if args.figure == 0 or args.figure == 2:
+    if fig_arg == "0" or fig_arg == "2":
         print("=" * 60)
         print("Figure 2: 数值特征标准化箱线图")
         print("=" * 60)
         figure_2_boxplot()
 
-    if args.figure == 0 or args.figure == 3:
+    if fig_arg == "0" or fig_arg == "3":
         print("=" * 60)
         print("Figure 3: 模型性能对比柱状图 (R² + RMSE)")
         print("=" * 60)
         figure_3_model_comparison()
 
-    if args.figure == 0 or args.figure == 4:
+    if fig_arg == "0" or fig_arg == "4":
         print("=" * 60)
-        print("Figure 4: 预测值 vs 实验值散点图 (按 SBET 着色)")
+        print("Figure 4: TabPFN 边缘分布 + 残差图 (GridSpec 3×6)")
         print("=" * 60)
-        figure_4_pred_vs_exp()
+        figure_4_tabpfn_marginal()
 
-    if args.figure == 0 or args.figure == 5:
+    if fig_arg == "0" or fig_arg == "5":
         print("=" * 60)
         print("Figure 5: GBDT SHAP beeswarm 汇总图")
         print("=" * 60)
         figure_5_shap_beeswarm()
 
-    if args.figure == 0 or args.figure == 6:
+    if fig_arg == "0" or fig_arg == "6":
         print("=" * 60)
         print("Figure 6: Top 3 特征 SHAP 依赖图")
         print("=" * 60)
         figure_6_shap_dependence()
 
-    if args.figure == 0 or args.figure == 7:
+    if fig_arg == "0" or fig_arg == "7":
         print("=" * 60)
         print("Figure 7: GBDT 残差分析 2×2 面板")
         print("=" * 60)
         figure_7_residuals()
 
-    if args.figure == 0 or args.figure == 8:
+    if fig_arg == "0" or fig_arg == "8":
         print("=" * 60)
         print("Figure 8: Top 4 特征 PDP + ICE")
         print("=" * 60)
