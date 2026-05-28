@@ -62,7 +62,7 @@ plotting.py             → 8张论文图, 300DPI
 - [x] 步骤7: plotting.py — Figure 1 完成 (Spearman相关热力图, 17特征, Ward聚类排序, RdBu柔和配色, 18×17", 300 DPI)
 - [x] TOPSIS: src/topsis.py — 层次熵权法(Grouped Entropy) ★ 论文主方案, CRITIC/标准熵权仅作敏感性分析
 - [x] Figure 1–8 + Figure S1 (全部9张论文图完成, 300 DPI, 保存至 outputs/figures/)
-- [x] Figure 4 重构: 80/20分层分割 + 出版级散点图(空心圆+残差+边缘分布+95%CI); 7模型CSV导出
+- [x] Figure 4 重构: 80/20分层分割 + 出版级散点图(空心圆+残差+边缘分布+回归线); 7模型CSV导出
 - [x] 模型性能评估报告中英文双版 (嵌套CV + 80/20分割 + TOPSIS + 核心发现)
 - [x] 数据泄露排查: 无特征工程TabPFN R²=0.9906 / 目标打乱R²=-0.04 / 无行重复
 - [ ] Notebooks 01-07
@@ -139,23 +139,23 @@ MAE_mean 因与 RMSE_mean 共线 (r=0.997) 被排除，避免组内通胀。
 - [x] 数据泄露排查: 无特征工程 R²=0.9906 / 目标打乱 R²=-0.04 / 无行重复 (2026-05-27)
 - [ ] Vmicro填补 vs 完整样本 R²差距 < 0.10
 
-## 80/20 分割评估 (2026-05-27)
+## 80/20 分割评估 (2026-05-28 修复后)
 
 单次分层80/20随机划分 (stratified by target bins, random_state=42), 272训练/69测试。
 模型在训练集上训练后对两部分分别预测。
 
 | 模型 | Train R² | Train RMSE | Test R² | Test RMSE | Test MAE | Test MAPE |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| LightGBM | 0.9993 | 1.66 | 0.9613 | 12.04 | — | — |
-| GBDT | 0.9999 | 0.57 | 0.9556 | 12.89 | — | — |
-| XGBoost | 0.9993 | 1.61 | 0.9487 | 13.86 | — | — |
-| RF | 0.9925 | 5.43 | 0.9472 | 14.06 | — | — |
-| TabPFN | 0.9998 | 0.92 | 0.9343 | 15.68 | — | — |
-| GPR | 0.9859 | 7.43 | 0.9322 | 15.93 | — | — |
-| SVR | 0.6294 | 38.07 | 0.4567 | 45.08 | — | — |
+| LightGBM | 0.9993 | 1.66 | 0.9613 | 12.04 | 7.50 | 12.70% |
+| GBDT | 0.9999 | 0.57 | 0.9556 | 12.89 | 7.71 | 15.57% |
+| XGBoost | 0.9993 | 1.61 | 0.9487 | 13.86 | 9.16 | 16.71% |
+| RF | 0.9925 | 5.43 | 0.9472 | 14.06 | 8.89 | 17.72% |
+| TabPFN | 0.9998 | 0.92 | 0.9343 | 15.68 | 5.96 | 6.50% |
+| GPR | 0.9877 | 6.94 | 0.9368 | 15.38 | 7.45 | 10.42% |
+| SVR | 0.9647 | 11.75 | 0.8479 | 23.85 | 10.98 | 13.68% |
 
-注: SVR偏低因导出时未加载Optuna最优参数；TabPFN seed=42 R²=0.9343偏低因该分割训练集中28条Vmicro约束修正干扰in-context learning。
-5次随机分割TabPFN均值=0.9584，论文建议采用嵌套CV的0.9692。
+注: SVR/GPR 2026-05-28修复: export_prediction_tables.py对管道C参数重复添加regressor__前缀导致set_params静默失败、回退sklearn默认参数。
+TabPFN seed=42 R²=0.9343偏低因该分割训练集中28条Vmicro约束修正干扰in-context learning；5次随机分割TabPFN均值=0.9584，论文建议采用嵌套CV的0.9692。
 
 ## 泄漏排查记录 (2026-05-27)
 
@@ -177,8 +177,8 @@ MAE_mean 因与 RMSE_mean 共线 (r=0.997) 被排除，避免组内通胀。
 # 导出80/20分割CSV (所有7个非线性模型)
 python -m src.export_prediction_tables
 
-# 生成TabPFN出版级散点图
-python -m src.plot_tabpfn_marginal
+# 生成80/20分割出版级散点图 (7张, 空心圆+回归线+边缘分布+残差)
+python -m src.plot_80_20_marginal
 
 # 生成模型性能评估报告 (中英文双版)
 python -m src.generate_performance_report

@@ -189,8 +189,8 @@ def generate_report(lang='en'):
     subtitle = doc.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = subtitle.add_run(
-        '生成日期: 2026-05-26 | 随机种子=42 | 样本量=341' if is_zh
-        else 'Generated: 2026-05-26 | Seed=42 | 341 Samples'
+        '生成日期: 2026-05-28 | 随机种子=42 | 样本量=341' if is_zh
+        else 'Generated: 2026-05-28 | Seed=42 | 341 Samples'
     )
     run.font.size = Pt(10)
     run.font.color.rgb = RGBColor(128, 128, 128)
