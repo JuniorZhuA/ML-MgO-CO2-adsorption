@@ -1,0 +1,10 @@
+﻿Model,Pipeline,Default R²,Default RMSE,Default MAE,Tuned R²,Tuned RMSE,Tuned MAE,Δ R²,Optimal Hyperparameters
+Ridge,A,0.3536,49.71,35.58,0.3608,49.66,35.73,+0.0072,alpha=1.43
+Lasso,A,0.3839,48.61,36.21,0.3521,50.00,36.43,-0.0318,alpha=0.772
+RF,B,0.9469,14.21,8.01,0.9503,13.75,7.69,+0.0034,"n_estimators=246, max_depth=11, min_samples_split=2, min_samples_leaf=1, max_features=0.444"
+XGBoost,B,0.9365,15.40,8.88,0.9449,14.34,7.31,+0.0085,"n_estimators=432, max_depth=7, learning_rate=0.0238, subsample=0.997, colsample_bytree=0.772, reg_alpha=0.0268, reg_lambda=0.606"
+LightGBM,B,0.9206,17.16,10.93,0.9350,15.67,8.67,+0.0143,"n_estimators=356, num_leaves=40, learning_rate=0.0969, subsample=0.787, colsample_bytree=0.645, reg_alpha=0.00132, reg_lambda=0.0761, min_child_samples=5"
+GBDT,B,0.9292,16.44,11.04,0.9528,13.35,7.25,+0.0236,"n_estimators=544, max_depth=11, learning_rate=0.0694, subsample=0.842, min_samples_split=13, min_samples_leaf=4, max_features=0.326"
+SVR,C,0.5045,43.60,30.77,0.9112,18.28,8.32,+0.4068,"C=30.2, gamma=0.532, epsilon=0.0183"
+GPR,C,0.9373,15.08,7.51,0.9299,15.94,7.83,-0.0075,alpha=0.0194
+TabPFN,D,0.9692,10.73,4.12,0.9692,10.73,4.12,+0.0000,— (零超参模型)
