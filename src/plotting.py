@@ -650,23 +650,68 @@ def figure_4_tabpfn_marginal() -> plt.Figure:
     return fig
 
 
-def figure_5_shap_beeswarm() -> plt.Figure:
-    """Figure 5: GBDT SHAP beeswarm 汇总图 — Top 15 特征 (300 DPI)"""
+# ============================================================================
+# 共享缓存加载器 —— 所有SHAP绘图函数从此读取，避免重复计算
+# ============================================================================
 
+def _load_shap_cache():
+    """加载缓存的 SHAP 中间数据。
+
+    优先从 outputs/tables/ 读取，缓存不存在时自动计算并保存。
+    这样绘图函数修改后无需重跑昂贵的SHAP计算。
+
+    Returns
+    -------
+    dict with keys:
+        X_transformed : DataFrame (341 × 27)
+        shap_values   : ndarray (341 × 27)
+        feature_names : list[str]
+        importance    : DataFrame (27 × 2)
+        dropped_features : list[str]
+    """
+    import json
     import joblib
     import shap
     from src.data_loader import load_and_clean
     from src.config import ROOT
 
-    print("加载 GBDT 最终模型...")
+    tables_dir = ROOT / "outputs" / "tables"
+    figures_dir = ROOT / "outputs" / "figures"
+
+    X_csv = tables_dir / "X_transformed_gbdt.csv"
+    shap_csv = tables_dir / "shap_values_gbdt.csv"
+    imp_csv = tables_dir / "shap_importance_gbdt.csv"
+    feat_json = tables_dir / "feature_names.json"
+    dropped_json = tables_dir / "dropped_features.json"
+
+    # ---- 缓存命中：从磁盘直接读取 ----
+    if all(f.exists() for f in [X_csv, shap_csv, imp_csv, feat_json]):
+        print("  [缓存] 从 outputs/tables/ 加载 SHAP 数据...")
+        with open(feat_json, "r", encoding="utf-8") as f:
+            feat_meta = json.load(f)
+        feature_names = feat_meta["feature_names"]
+
+        dropped_features = []
+        if dropped_json.exists():
+            with open(dropped_json, "r", encoding="utf-8") as f:
+                dropped_features = json.load(f).get("dropped_features", [])
+
+        return {
+            "X_transformed": pd.read_csv(X_csv),
+            "shap_values": pd.read_csv(shap_csv).values,
+            "feature_names": feature_names,
+            "importance": pd.read_csv(imp_csv),
+            "dropped_features": dropped_features,
+        }
+
+    # ---- 缓存缺失：计算并保存 ----
+    print("  [计算] 缓存不存在，重新计算 GBDT SHAP...")
     df = load_and_clean()
     X_raw = df.drop(columns=[TARGET])
-    y = df[TARGET]
 
     gbdt_path = ROOT / "outputs" / "models" / "GBDT_final.pkl"
     gbdt_pipe = joblib.load(gbdt_path)
 
-    # 逐级变换
     imputer = gbdt_pipe.named_steps["impute"]
     engineer = gbdt_pipe.named_steps["features"]
     preprocessor = gbdt_pipe.named_steps["preprocessor"]
@@ -676,20 +721,58 @@ def figure_5_shap_beeswarm() -> plt.Figure:
     X_fe = engineer.transform(X_imputed)
     X_transformed = preprocessor.transform(X_fe)
 
-    # 获取特征名
     cat_cols, num_cols = _get_column_lists(X_fe)
     feature_names = cat_cols + num_cols
 
-    # 确保 X_transformed 是 DataFrame
     if not isinstance(X_transformed, pd.DataFrame):
         X_transformed = pd.DataFrame(X_transformed, columns=feature_names)
 
-    # 计算 SHAP
-    print("  计算 TreeExplainer SHAP 值...")
+    print("  计算 TreeExplainer SHAP 值并缓存...")
     explainer = shap.TreeExplainer(model)
     shap_vals = explainer.shap_values(X_transformed)
     if isinstance(shap_vals, list):
         shap_vals = shap_vals[0]
+
+    importance = np.abs(shap_vals).mean(axis=0)
+    imp_df = pd.DataFrame({
+        "feature": feature_names,
+        "shap_importance_mean": importance,
+    }).sort_values("shap_importance_mean", ascending=False).reset_index(drop=True)
+
+    # 保存缓存
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    X_transformed.to_csv(X_csv, index=False, encoding="utf-8-sig")
+    pd.DataFrame(shap_vals, columns=feature_names).to_csv(shap_csv, index=False, encoding="utf-8-sig")
+    imp_df.to_csv(imp_csv, index=False, encoding="utf-8-sig")
+    with open(feat_json, "w", encoding="utf-8") as f:
+        json.dump({"feature_names": feature_names, "cat_cols": cat_cols, "num_cols": num_cols}, f, ensure_ascii=False, indent=2)
+    # dropped_features 由 shap_analysis.py 写入，此处不覆盖
+
+    # 加载 dropped_features（如果存在）
+    dropped_features = []
+    if dropped_json.exists():
+        with open(dropped_json, "r", encoding="utf-8") as f:
+            dropped_features = json.load(f).get("dropped_features", [])
+
+    print(f"  缓存已保存: X_transformed ({X_transformed.shape}), SHAP ({shap_vals.shape}), importance ({len(imp_df)} features)")
+
+    return {
+        "X_transformed": X_transformed,
+        "shap_values": shap_vals,
+        "feature_names": feature_names,
+        "importance": imp_df,
+        "dropped_features": dropped_features,
+    }
+
+
+def figure_5_shap_beeswarm() -> plt.Figure:
+    """Figure 5: GBDT SHAP beeswarm 汇总图 — Top 15 特征 (300 DPI)"""
+
+    # ★ 从缓存加载（首次计算自动缓存）
+    cache = _load_shap_cache()
+    X_transformed = cache["X_transformed"]
+    shap_vals = cache["shap_values"]
+    feature_names = cache["feature_names"]
 
     # 计算 mean(|SHAP|) 并选 Top 15
     importance = np.abs(shap_vals).mean(axis=0)
@@ -761,38 +844,13 @@ def figure_5_shap_beeswarm() -> plt.Figure:
 def figure_6_shap_dependence() -> plt.Figure:
     """Figure 6: Top 3 特征 SHAP 依赖图 — 横向排列 (300 DPI)"""
 
-    import joblib
-    import shap
-    from src.data_loader import load_and_clean
-    from src.config import ROOT
+    from scipy.stats import spearmanr
 
-    print("加载 GBDT 最终模型...")
-    df = load_and_clean()
-    X_raw = df.drop(columns=[TARGET])
-
-    gbdt_path = ROOT / "outputs" / "models" / "GBDT_final.pkl"
-    gbdt_pipe = joblib.load(gbdt_path)
-
-    imputer = gbdt_pipe.named_steps["impute"]
-    engineer = gbdt_pipe.named_steps["features"]
-    preprocessor = gbdt_pipe.named_steps["preprocessor"]
-    model = gbdt_pipe.named_steps["model"]
-
-    X_imputed = imputer.transform(X_raw)
-    X_fe = engineer.transform(X_imputed)
-    X_transformed = preprocessor.transform(X_fe)
-
-    cat_cols, num_cols = _get_column_lists(X_fe)
-    all_features = cat_cols + num_cols
-    if not isinstance(X_transformed, pd.DataFrame):
-        X_transformed = pd.DataFrame(X_transformed, columns=all_features)
-
-    # 计算 SHAP
-    print("  计算 SHAP 值...")
-    explainer = shap.TreeExplainer(model)
-    shap_vals = explainer.shap_values(X_transformed)
-    if isinstance(shap_vals, list):
-        shap_vals = shap_vals[0]
+    # ★ 从缓存加载
+    cache = _load_shap_cache()
+    X_transformed = cache["X_transformed"]
+    shap_vals = cache["shap_values"]
+    all_features = cache["feature_names"]
 
     # Top 3 特征
     importance = np.abs(shap_vals).mean(axis=0)
@@ -867,6 +925,80 @@ def figure_6_shap_dependence() -> plt.Figure:
     # ── 保存 ─────────────────────────────────────────────────────────────
     FIGURES.mkdir(parents=True, exist_ok=True)
     output_path = FIGURES / "Figure_6_SHAP_Dependence.png"
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
+    print(f"\n[OK] 已保存: {output_path}")
+
+    plt.close("all")
+    return fig
+
+
+def figure_shap_bar() -> plt.Figure:
+    """Figure: GBDT SHAP 全局特征重要性条形图 (Mean |SHAP|, Morandi配色, 300 DPI)
+
+    展示所有有效特征的 mean(|SHAP|) 降序排列。
+    使用莫兰迪色系（低饱和度），适合论文发表。
+    """
+
+    # ── 莫兰迪色系 ────────────────────────────────────────────────────────
+    MORANDI_SLATE = "#8B9DAF"      # 板岩蓝
+
+    # ★ 从缓存加载
+    cache = _load_shap_cache()
+    importance = cache["importance"]["shap_importance_mean"].values
+    all_features = cache["importance"]["feature"].values
+
+    # 降序 → 水平条形图自下而上需要升序
+    imp_df = pd.DataFrame({
+        "feature": all_features,
+        "mean_abs_shap": importance,
+    }).sort_values("mean_abs_shap", ascending=True)
+
+    # 过滤零重要性特征 (如 act2_*)
+    imp_df = imp_df[imp_df["mean_abs_shap"] > 1e-10]
+
+    n_features = len(imp_df)
+    print(f"  有效特征数: {n_features} (排除零重要性)")
+
+    # ── 绘图 ──────────────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(9, 0.35 * n_features + 1.5))
+
+    bars = ax.barh(
+        range(n_features),
+        imp_df["mean_abs_shap"].values,
+        height=0.7,
+        color=MORANDI_SLATE,
+        edgecolor="white",
+        linewidth=0.3,
+        alpha=0.9,
+    )
+
+    # 在条形末端标注数值
+    for i, (val,) in enumerate(zip(imp_df["mean_abs_shap"].values)):
+        ax.text(
+            val + max(importance) * 0.01,
+            i,
+            f"{val:.1f}",
+            va="center",
+            fontsize=8,
+            color="#555555",
+        )
+
+    ax.set_yticks(range(n_features))
+    ax.set_yticklabels(imp_df["feature"].values, fontsize=10)
+    ax.set_xlabel("Mean |SHAP value|", fontsize=12, fontweight="bold")
+    ax.set_ylabel("")
+    ax.tick_params(labelsize=9)
+    ax.set_xlim(0, imp_df["mean_abs_shap"].max() * 1.15)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.axvline(x=0, color="black", linewidth=0.5, linestyle="-")
+
+    ax.set_title("GBDT SHAP Feature Importance (Global)", fontsize=13,
+                 fontweight="bold", pad=12)
+
+    # ── 保存 ──────────────────────────────────────────────────────────────
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    output_path = FIGURES / "shap_bar_plot.png"
     fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
     print(f"\n[OK] 已保存: {output_path}")
 
@@ -1016,33 +1148,26 @@ def figure_8_pdp_ice() -> plt.Figure:
 
     import joblib
     from sklearn.inspection import partial_dependence
-    from src.data_loader import load_and_clean
     from src.config import ROOT
 
-    print("加载 GBDT 最终模型...")
-    df = load_and_clean()
-    X_raw = df.drop(columns=[TARGET])
+    # ★ 从缓存加载 SHAP 重要性（获取 Top 4 特征）
+    cache = _load_shap_cache()
+    importance_df = cache["importance"]
+    all_features = cache["feature_names"]
+    dropped_features = cache["dropped_features"]
 
+    # 过滤共线特征后的 Top 4
+    importance_clean = importance_df[~importance_df["feature"].isin(dropped_features)]
+    top4 = importance_clean["feature"].head(4).tolist()
+    top4_indices = [all_features.index(f) for f in top4]
+    print(f"  Top 4 特征 (SHAP, 有效特征): {top4}")
+
+    # PDP 需要模型，仅加载模型和前处理（不需要重算 SHAP）
+    print("  加载 GBDT 模型用于 PDP 计算...")
     gbdt_path = ROOT / "outputs" / "models" / "GBDT_final.pkl"
     gbdt_pipe = joblib.load(gbdt_path)
-
-    # 获取变换后的特征矩阵
-    imputer = gbdt_pipe.named_steps["impute"]
-    engineer = gbdt_pipe.named_steps["features"]
-    preprocessor = gbdt_pipe.named_steps["preprocessor"]
     model = gbdt_pipe.named_steps["model"]
-
-    X_transformed = preprocessor.transform(engineer.transform(imputer.transform(X_raw)))
-    cat_cols, num_cols = _get_column_lists(engineer.transform(imputer.transform(X_raw)))
-    all_features = cat_cols + num_cols
-    if not isinstance(X_transformed, pd.DataFrame):
-        X_transformed = pd.DataFrame(X_transformed, columns=all_features)
-
-    # Top 4 特征 (from SHAP Figure 5)
-    top4 = ["pressure_bar", "microporosity", "temperature_C", "T_lnP"]
-    top4_indices = [all_features.index(f) for f in top4]
-
-    print(f"  Top 4 特征: {top4}")
+    X_transformed = cache["X_transformed"]
 
     # ── 2×2 面板 ──────────────────────────────────────────────────────────
     fig, axes = plt.subplots(2, 2, figsize=(14, 11))
@@ -1162,5 +1287,11 @@ if __name__ == "__main__":
         print("Figure 8: Top 4 特征 PDP + ICE")
         print("=" * 60)
         figure_8_pdp_ice()
+
+    if fig_arg == "0" or fig_arg.upper() == "BAR":
+        print("=" * 60)
+        print("Figure BAR: GBDT SHAP 全局特征重要性条形图")
+        print("=" * 60)
+        figure_shap_bar()
 
     print("完成。")

@@ -1,0 +1,153 @@
+error uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/ (Caused by SSLErroerror uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/error uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/ (Caused by SSLErroerror uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/error uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/ (Caused by SSLErroerror uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/ (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1035)')))
+error uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/ (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1035)')))
+error uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/error uploading: HTTPSConnectionPool(host='eu.i.posthog.com', port=443): Max retries exceeded with url: /batch/ (Caused by SSLErroerror uploading: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))
+============================================================
+步骤6: SHAP 可解释性分析
+============================================================
+
+[1/5] 加载数据...
+  [约束] 修正 1 条 Vmicro < 0 的记录 → 0
+  [约束] 修正 16 条 Vmicro > Vtotal 的记录
+  数值特征 (19): ['SBET_m2_g', 'Vtotal_cm3_g', 'Vmicro_cm3_g', 'MgO_mass_ratio', 'temperature_C', 'pressure_bar', 'act1_temp_C', 'act1_duration_h', 'act2_temp_C', 'act2_duration_h', 'carb1_temp_C', 'carb1_duration_h', 'carb2_temp_C', 'carb2_duration_h', 'Vmeso_cm3_g', 'microporosity', 'MgO_surface_density', 'T_lnP', 'inv_T_K']
+  分类特征 (8): ['carbon_precursors', 'MgO_precursors', 'Mg_loading_method', 'act1_type', 'act2_type', 'carb1_type', 'carb2_type', 'post_treatment_type']
+  样本数: 341, 输入特征数: 15
+
+[2/5] VIF 多重共线性诊断 + 自动剔除...
+
+  [剔除] 零方差特征 (2个):
+         act2_temp_C: std=0.00e+00, 所有样本值=700.0000
+         act2_duration_h: std=0.00e+00, 所有样本值=1.0000
+
+  [剔除] 完美线性依赖 Vtotal = Vmicro + Vmeso → 保留 Vmicro、Vmeso，剔除 Vtotal
+
+  [迭代1] 仍有 2 个 VIF=INF 特征，继续剔除:
+         carb2_duration_h: VIF=INF, R²=1.0000
+         carb2_temp_C: VIF=INF, R²=1.0000
+
+  [警告] 2 个特征 VIF > 100 (已保留，仅警示):
+         SBET_m2_g: VIF=127.9
+         Vmicro_cm3_g: VIF=109.3
+
+  === 共剔除 5 个特征: ['act2_temp_C', 'act2_duration_h', 'Vtotal_cm3_g', 'carb2_duration_h', 'carb2_temp_C'] ===
+  剩余数值特征: 14 (原 19)
+
+  清洗后共 4 个特征 VIF > 10:
+    SBET_m2_g: VIF=127.9
+    Vmicro_cm3_g: VIF=109.3
+    inv_T_K: VIF=40.0
+    temperature_C: VIF=34.9
+  已保存: H:\study\machine learning\NEW-ML-MgOBC\outputs\tables\vif_table.csv
+
+[3/5] Spearman 相关系数 + Ward 层次聚类 (threshold=0.3)...
+  识别出 10 个共线特征簇:
+    簇1: ['T_lnP', 'pressure_bar']
+    簇2: ['Vmeso_cm3_g', 'carb1_temp_C']
+    簇3: ['inv_T_K', 'temperature_C']
+    簇4: ['SBET_m2_g', 'Vmicro_cm3_g']
+    簇5: ['MgO_mass_ratio']
+    簇6: ['MgO_surface_density']
+    簇7: ['act1_temp_C']
+    簇8: ['carb1_duration_h']
+    簇9: ['act1_duration_h']
+    簇10: ['microporosity']
+  已保存: H:\study\machine learning\NEW-ML-MgOBC\outputs\tables\feature_clusters.csv
+  已保存: H:\study\machine learning\NEW-ML-MgOBC\outputs\tables\spearman_correlation.csv
+
+[4/5] TabPFN 排列重要性 (n_repeats=30, 预变换加速)...
+  预变换数据 (impute + feature engineering)...
+  [约束] 修正 1 条 Vmicro < 0 的记录 → 0
+  [约束] 修正 16 条 Vmicro > Vtotal 的记录
+  在 27 个特征上运行排列重要性 (30 次重复)...
+  计算 TabPFN 排列重要性 (n_repeats=30, n_jobs=1)...
+  已保存: H:\study\machine learning\NEW-ML-MgOBC\outputs\tables\permutation_importance_tabpfn.csv
+  Top 5 重要特征 (TabPFN):
+    pressure_bar: 61.25 +- 2.00
+    temperature_C: 22.01 +- 0.89
+    inv_T_K: 21.36 +- 0.89
+    MgO_mass_ratio: 13.85 +- 0.95
+    T_lnP: 13.25 +- 1.19
+  从缓存加载 GBDT SHAP 重要性...
+  Top 5 重要特征 (GBDT SHAP):
+    pressure_bar: 18.9185
+    microporosity: 14.8197
+    temperature_C: 9.1683
+    T_lnP: 8.2048
+    inv_T_K: 7.1842
+
+  一致性检验使用 22/27 个有效特征 (剔除 5 个共线特征)
+
+============================================================
+一致性检验: TabPFN 排列重要性 vs GBDT SHAP (有效特征)
+============================================================
+  Spearman ρ = 0.8317  (p = 0.0000)
+  [OK] ρ > 0.6 — 两种范式归因高度一致
+
+  Top 10 特征排名对比 (有效特征):
+  特征                          TabPFN排名     GBDT排名      排名差
+  -------------------------------------------------------
+  pressure_bar                       1          1        0
+  temperature_C                      2          3        1
+  inv_T_K                            3          5        2
+  MgO_mass_ratio                     4          6        2
+  T_lnP                              5          4        1
+  SBET_m2_g                          6         12        6
+  microporosity                      7          2        5
+  MgO_surface_density                8          9        1
+  carbon_precursors                  9         10        1
+  Vmicro_cm3_g                      10          7        3
+
+  已剔除特征 (不计入排名):
+    Vtotal_cm3_g: TabPFN重要性=3.80 (共线已剔除)
+    carb2_duration_h: TabPFN重要性=2.51 (共线已剔除)
+    carb2_temp_C: TabPFN重要性=1.96 (共线已剔除)
+    act2_temp_C: TabPFN重要性=0.03 (共线已剔除)
+    act2_duration_h: TabPFN重要性=0.02 (共线已剔除)
+
+  已保存: H:\study\machine learning\NEW-ML-MgOBC\outputs\tables\consistency_comparison.csv
+
+============================================================
+步骤6完成。所有结果已保存至 outputs/tables/
+============================================================
+
+  已保存文件:
+    50_splits_raw_results.csv
+    50_splits_summary_table.csv
+    consistency_comparison.csv
+    critic_weights.csv
+    entropy_weights.csv
+    feature_clusters.csv
+    grouped_weights.csv
+    optimization_comparison_table.csv
+    permutation_importance_tabpfn.csv
+    shap_importance_gbdt.csv
+    shap_values_gbdt.csv
+    spearman_correlation.csv
+    topsis_critic.csv
+    topsis_entropy.csv
+    topsis_grouped.csv
+    vif_table.csv
+    X_transformed_gbdt.csv
+
+  关键指标摘要:
+    原始数值特征数: 19
+    剔除共线特征数: 5
+    剔除列表: ['act2_temp_C', 'act2_duration_h', 'Vtotal_cm3_g', 'carb2_duration_h', 'carb2_temp_C']
+    清洗后数值特征数: 14
+    VIF > 10 的特征数 (清洗后): 4
+    共线特征簇数 (清洗后): 10
+    一致性检验特征数: 22
+    TabPFN vs GBDT Spearman ρ: 0.8317
+    验证标准 ρ > 0.6: [OK] 通过
+
+总耗时: 266.7 分钟
+完成时间: 2026-06-01 20:24:35
+mp_C']
+    清洗后数值特征数: 14
+    VIF > 10 的特征数 (清洗后): 4
+    共线特征簇数 (清洗后): 10
+    一致性检验特征数: 22
+    TabPFN vs GBDT Spearman ρ: 0.8317
+    验证标准 ρ > 0.6: [OK] 通过
+
+总耗时: 261.3 分钟
+完成时间: 2026-06-01 20:24:11

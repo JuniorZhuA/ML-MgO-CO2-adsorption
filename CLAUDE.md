@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 data_loader.py          → raw DataFrame (341 行, 16 列含目标)
 preprocessing.py        → MissingValueImputer (fit_transform)
-feature_engineering.py  → FeatureEngineer (fit_transform) → 28 列
+feature_engineering.py  → FeatureEngineer (fit_transform) → 28 列 (27 特征 + 目标)
 models.py               → 4条管道 × 9个模型
 train.py                → 嵌套CV(StratifiedKFold 5×3) + Optuna TPE(n_trials=100) + KDE权重 + 最终模型训练/保存
 evaluate.py             → 指标计算汇总
@@ -34,7 +34,7 @@ plotting.py             → 8张论文图, 300DPI
 ### 数据流
 
 - **步骤1** `data_loader.load_and_clean()`: 读取 Excel(skiprows=2), 赋予规范列名, 数值列转换, Unicode统一, 工艺NaN→"none", 合并 impregnation/wetness impregnation
-- **步骤2** `preprocessing.MissingValueImputer`: SBET/Vtotal→KNN(k=5), Vmicro→IterativeImputer(BayesianRidge, max_iter=20), 物理约束 NaN < 0→0 和 Vmicro>Vtotal→Vtotal, 删除 MgO_crystallite_size
+- **步骤2** `preprocessing.MissingValueImputer`: SBET/Vtotal→KNN(k=5), Vmicro→IterativeImputer(BayesianRidge, max_iter=20), 物理约束 Vmicro<0→0 和 Vmicro>Vtotal→Vtotal, 删除 MgO_crystallite_size
 - **步骤3** `feature_engineering.FeatureEngineer`: 正则提取温度(°C)/时长(h), 工艺分类, 构建5个领域复合特征(Vmeso, microporosity, MgO_surface_density, T_lnP, inv_T_K), 丢弃原始工艺文本列
 - **步骤4** `models.py`: 9个模型, 4条管道, Optuna超参空间。`get_all_models(X)` 返回 (名称, Pipeline, 管道标签, param_fn) 列表。`suggest_params(trial, name)` 提供Optuna搜索空间。TabPFN需一次性许可接受后才能加入模型列表（`TABPFN_READY` 标志）
 
@@ -58,7 +58,9 @@ plotting.py             → 8张论文图, 300DPI
 - [x] 步骤3: feature_engineering.py — 完成并验证
 - [x] 步骤4: models.py — 完成，9/9模型已验证 ✓
 - [x] 步骤5: train.py + evaluate.py — 完成，嵌套CV(StratifiedKFold 5×3, n_trials=100) + KDE权重 + 最终模型已保存
-- [x] 步骤6: shap_analysis.py — VIF(11高共线) + Spearman聚类(9簇) + TabPFN排列重要性 + GBDT TreeExplainer SHAP + 一致性 Spearman ρ=0.8796
+- [x] 步骤6: shap_analysis.py — VIF INF自动剔除(5特征: act2_temp_C/act2_duration_h/Vtotal/carb2_duration_h/carb2_temp_C) + Spearman聚类(10簇, threshold=0.3, 最大簇仅2特征) + TabPFN排列重要性(n_repeats=30, 耗时261min) + GBDT TreeExplainer SHAP + 一致性 Spearman ρ=0.8317(22有效特征)
+- [x] SHAP 第一阶段重构完成 (2026-06-02): 诊断函数 + 聚类修复 + n_repeats→30 + 缓存管线 + 原生beeswarm + 一致性散点图 + bar plot
+- [x] 纯渲染管线: `render_advanced_plots.py`(beeswarm+consistency scatter), `render_bar_plot.py`(bar plot) — 零模型计算，仅读缓存生成
 - [x] 步骤7: plotting.py — Figure 1 完成 (Spearman相关热力图, 17特征, Ward聚类排序, RdBu柔和配色, 18×17", 300 DPI)
 - [x] TOPSIS: src/topsis.py — 层次熵权法(Grouped Entropy) ★ 论文主方案, CRITIC/标准熵权仅作敏感性分析
 - [x] Figure 1–8 + Figure S1 (全部9张论文图完成, 300 DPI, 保存至 outputs/figures/)
@@ -134,7 +136,7 @@ MAE_mean 因与 RMSE_mean 共线 (r=0.997) 被排除，避免组内通胀。
 - [x] XGBoost/LightGBM 嵌套CV R² > 0.80 (实测: 0.9449 / 0.9350)
 - [x] 最优非线性 - Ridge R² ≥ 0.05 (实测差距: 0.592)
 - [x] TabPFN(零超参) ≥ RF(调优后) (实测: 0.9692 vs 0.9503)
-- [x] SHAP一致性 TabPFN vs GBDT ρ > 0.6 (实测: ρ=0.8796)
+- [x] SHAP一致性 TabPFN vs GBDT ρ > 0.6 (实测: ρ=0.8114)
 - [x] 预处理数据泄露已根除: MissingValueImputer + FeatureEngineer Pipeline内部化
 - [x] 数据泄露排查: 无特征工程 R²=0.9906 / 目标打乱 R²=-0.04 / 无行重复 (2026-05-27)
 - [ ] Vmicro填补 vs 完整样本 R²差距 < 0.10
@@ -158,7 +160,7 @@ MAE_mean 因与 RMSE_mean 共线 (r=0.997) 被排除，避免组内通胀。
 注:
 - 种子91: TabPFN 80/20排名#1(0.9688)与嵌套CV排名#1(0.9692)一致
 - SVR双重前缀bug已于2026-05-28修复 (见export_prediction_tables.py REPR_SEED=91)
-- 原seed=42因28条Vmicro约束修正干扰TabPFN in-context learning，单次R²=0.9343偏低
+- 原seed=42因46条Vmicro约束修正(1条<0 + 45条>Vtotal)干扰TabPFN in-context learning，单次R²=0.9343偏低
 - 论文以嵌套CV R²=0.9692为TabPFN主报告值，80/20作为独立外推验证
 
 ## 泄漏排查记录 (2026-05-27)
@@ -167,7 +169,7 @@ MAE_mean 因与 RMSE_mean 共线 (r=0.997) 被排除，避免组内通胀。
 
 | 测试 | R² | 结论 |
 |:---|:---:|:---|
-| TabPFN + Pipeline D (28特征) | 0.9910 | 基线 |
+| TabPFN + Pipeline D (27特征) | 0.9910 | 基线 |
 | TabPFN + 仅6原始特征 (无特征工程, median填补) | 0.9906 | 特征工程非关键 |
 | TabPFN + Pipeline D + 目标打乱 | -0.0403 | X→y关系真实存在 |
 | Train/Test重复行检查 | 0行 | 无数据泄露 |
@@ -178,12 +180,14 @@ MAE_mean 因与 RMSE_mean 共线 (r=0.997) 被排除，避免组内通胀。
 ## 运行方式 (新增)
 
 ```bash
-# 导出80/20分割CSV (所有7个非线性模型)
+# 纯渲染管线（零模型计算，秒级完成）
+python render_advanced_plots.py     # Figure 5 native beeswarm + consistency scatter
+python render_bar_plot.py           # Figure 7 SHAP bar plot (Morandi审美)
+
+# 完整SHAP分析（需重算，n_repeats=30约4.3小时）
+python -m src.shap_analysis
+
+# 80/20分割CSV + 散点图
 python -m src.export_prediction_tables
-
-# 生成80/20分割出版级散点图 (7张, 空心圆+回归线+边缘分布+残差)
 python -m src.plot_80_20_marginal
-
-# 生成模型性能评估报告 (中英文双版)
-python -m src.generate_performance_report
 ```
