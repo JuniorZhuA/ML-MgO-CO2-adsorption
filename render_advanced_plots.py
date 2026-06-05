@@ -78,7 +78,7 @@ print("Figure 2: TabPFN vs GBDT Feature Rank Consistency")
 print("=" * 60)
 
 MORANDI_BLUE = "#5b84b1"   # 莫兰迪蓝
-MORANDI_RED = "#c49b9b"    # 莫兰迪粉（用于 ρ 标注）
+MORANDI_RED = "#bc6c6c"    # 柔和红色（ρ 标注）
 
 fig, ax = plt.subplots(figsize=(6.5, 6))
 
@@ -101,7 +101,7 @@ ax.text(
     transform=ax.transAxes, fontsize=12,
     verticalalignment="bottom", horizontalalignment="right",
     bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="gray",
-              alpha=0.9, linewidth=0.8),
+              linewidth=0.8),
     color=MORANDI_RED, fontweight="bold",
 )
 

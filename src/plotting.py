@@ -137,8 +137,21 @@ def figure_1_clustermap() -> plt.Figure:
 def figure_2_boxplot() -> plt.Figure:
     """Figure 2: 数值特征标准化箱线图 (300 DPI)
 
-    19个数值特征，Z-score标准化后横向箱线图，按领域分组排列。
+    17个数值特征，Z-score标准化后横向箱线图。
+    特征名: mathtext 正确渲染下标/上标，单位放入括号。
+    Times New Roman 全局字体，不加分组。
     """
+
+    # ── 微软雅黑 (局部, 不影响其他图); SVG文字存为文本 ──
+    _orig_family = matplotlib.rcParams['font.family']
+    _orig_sans = matplotlib.rcParams['font.sans-serif'].copy()
+    _orig_uminus = matplotlib.rcParams['axes.unicode_minus']
+    matplotlib.rcParams['font.family'] = 'sans-serif'
+    matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei'] + _orig_sans
+    matplotlib.rcParams['axes.unicode_minus'] = False
+    matplotlib.rcParams['svg.fonttype'] = 'none'
+    matplotlib.rcParams['pdf.fonttype'] = 42
+    matplotlib.rcParams['ps.fonttype'] = 42
 
     from src.data_loader import load_and_clean
     from src.preprocessing import MissingValueImputer
@@ -169,58 +182,67 @@ def figure_2_boxplot() -> plt.Figure:
         print(f"  排除零方差特征: {zero_var_cols}")
         num_cols = [c for c in num_cols if c not in zero_var_cols]
 
-    # 按领域分组排序
-    feature_groups = [
-        ("孔结构特征", [
-            "SBET_m2_g", "Vtotal_cm3_g", "Vmicro_cm3_g", "Vmeso_cm3_g", "microporosity",
-        ]),
-        ("MgO 负载特征", [
-            "MgO_mass_ratio", "MgO_surface_density",
-        ]),
-        ("工艺条件", [
-            "temperature_C", "pressure_bar", "T_lnP", "inv_T_K",
-        ]),
-        ("活化参数", [
-            "act1_temp_C", "act1_duration_h", "act2_temp_C", "act2_duration_h",
-        ]),
-        ("碳化参数", [
-            "carb1_temp_C", "carb1_duration_h", "carb2_temp_C", "carb2_duration_h",
-        ]),
+    # ── 特征名映射: 下标用mathtext, 单位用Unicode上标 ──
+    FEATURE_NAME_MAP = {
+        # 孔结构特征 — 纯Unicode, PPT可编辑
+        "SBET_m2_g":        "SBET (m²/g)",
+        "Vtotal_cm3_g":     "Vtotal (cm³/g)",
+        "Vmicro_cm3_g":     "Vmicro (cm³/g)",
+        "Vmeso_cm3_g":      "Vmeso (cm³/g)",
+        "microporosity":    "Microporosity",
+        # MgO 负载特征
+        "MgO_mass_ratio":       "MgO mass ratio",
+        "MgO_surface_density":  "MgO surface density",
+        # 工艺条件 — Unicode 符号
+        "temperature_C":    "Temperature (°C)",
+        "pressure_bar":     "Pressure (bar)",
+        "T_lnP":            "T·ln(P) (K)",
+        "inv_T_K":          "1/T (1/K)",
+        # 活化参数 — Act1/Carb1 直接连接, Temp 无点号
+        "act1_temp_C":      "Act1 Temp (°C)",
+        "act1_duration_h":  "Act1 Duration (h)",
+        "act2_temp_C":      "Act2 Temp (°C)",
+        "act2_duration_h":  "Act2 Duration (h)",
+        # 碳化参数
+        "carb1_temp_C":     "Carb1 Temp (°C)",
+        "carb1_duration_h": "Carb1 Duration (h)",
+        "carb2_temp_C":     "Carb2 Temp (°C)",
+        "carb2_duration_h": "Carb2 Duration (h)",
+    }
+
+    # 特征显示顺序 (逻辑排列, 不加分组)
+    FEATURE_ORDER = [
+        "SBET_m2_g", "Vtotal_cm3_g", "Vmicro_cm3_g", "Vmeso_cm3_g", "microporosity",
+        "MgO_mass_ratio", "MgO_surface_density",
+        "temperature_C", "pressure_bar", "T_lnP", "inv_T_K",
+        "act1_temp_C", "act1_duration_h", "act2_temp_C", "act2_duration_h",
+        "carb1_temp_C", "carb1_duration_h", "carb2_temp_C", "carb2_duration_h",
     ]
 
-    ordered_feats = []
-    for _, feats in feature_groups:
-        for f in feats:
-            if f in X_scaled.columns:
-                ordered_feats.append(f)
+    ordered_feats_raw = [f for f in FEATURE_ORDER if f in X_scaled.columns]
+    ordered_feats_display = [FEATURE_NAME_MAP[f] for f in ordered_feats_raw]
 
-    X_plot = X_scaled[ordered_feats]
-
-    # 转换为长格式用于 seaborn
+    X_plot = X_scaled[ordered_feats_raw].copy()
+    X_plot.columns = ordered_feats_display
     df_long = X_plot.melt(var_name="Feature", value_name="Z-score")
 
     # 绘图
-    n_feat = len(ordered_feats)
-    fig_h = max(5.5, n_feat * 0.38)
-    fig, ax = plt.subplots(figsize=(10, fig_h))
+    n_feat = len(ordered_feats_display)
+    fig_h = max(6, n_feat * 0.48)
+    fig, ax = plt.subplots(figsize=(12, fig_h))
 
-    # 按组分配明亮柔和色
-    group_colors = ["#7EC8E3", "#F4A87C", "#A8D8A8", "#D4B5E1", "#F7C873"]
-    feat_to_color = {}
-    for gi, (_, feats) in enumerate(feature_groups):
-        for f in feats:
-            if f in ordered_feats:
-                feat_to_color[f] = group_colors[gi]
+    # ── 统一明亮柔和色 ──
+    BOX_COLOR = "#EFC8B0"  # 柔和活泼珊瑚橙
 
     bp = sns.boxplot(
         data=df_long,
         y="Feature",
         x="Z-score",
-        order=ordered_feats,
-        palette=feat_to_color,
-        linewidth=0.8,
-        fliersize=2,
-        flierprops={"marker": "o", "markersize": 2, "alpha": 0.4},
+        order=ordered_feats_display,
+        color=BOX_COLOR,
+        linewidth=1.1,
+        fliersize=3.5,
+        flierprops={"marker": "o", "markersize": 3.5, "alpha": 0.4},
         ax=ax,
     )
 
@@ -234,17 +256,34 @@ def figure_2_boxplot() -> plt.Figure:
 
     ax.axvline(x=0, color="black", linewidth=0.8, linestyle="-", alpha=0.4)
 
-    ax.set_xlabel("Z-score", fontsize=13, fontweight="bold")
+    # ── 标签: 微软雅黑 Bold, 加大字号 ──
+    ax.set_xlabel("Z-score", fontsize=18, fontweight="bold")
     ax.set_ylabel("")
-    ax.tick_params(labelsize=10)
+    ax.tick_params(labelsize=13)
 
-    # 保存
+    ax.set_yticklabels(ordered_feats_display, fontsize=14, fontweight="bold")
+    for label in ax.get_xticklabels():
+        label.set_fontweight("bold")
+
+    # 保存 (PNG + SVG + PDF)
     fig.tight_layout()
     FIGURES.mkdir(parents=True, exist_ok=True)
-    output_path = FIGURES / "Figure_2_Boxplot.png"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
-    print(f"\n[OK] 已保存: {output_path}")
-    print(f"     分辨率: 300 DPI, 特征数: {n_feat}")
+    png_path = FIGURES / "Figure_2_Boxplot.png"
+    svg_path = FIGURES / "Figure_2_Boxplot.svg"
+    pdf_path = FIGURES / "Figure_2_Boxplot.pdf"
+    fig.savefig(png_path, dpi=300, bbox_inches="tight", facecolor="white")
+    fig.savefig(svg_path, dpi=300, bbox_inches="tight", facecolor="white")
+    fig.savefig(pdf_path, dpi=300, bbox_inches="tight", facecolor="white")
+    print(f"\n[OK] 已保存: {png_path}")
+    print(f"     已保存: {svg_path}")
+    print(f"     已保存: {pdf_path}")
+    print(f"     分辨率: 300 DPI, 特征数: {n_feat}, Z-score 标准化")
+    print(f"     字体: 微软雅黑 Bold, 配色: {BOX_COLOR}, 无分组")
+
+    # 恢复全局字体设置
+    matplotlib.rcParams['font.family'] = _orig_family
+    matplotlib.rcParams['font.sans-serif'] = _orig_sans
+    matplotlib.rcParams['axes.unicode_minus'] = _orig_uminus
 
     plt.close("all")
     return fig

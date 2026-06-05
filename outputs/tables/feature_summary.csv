@@ -1,0 +1,28 @@
+﻿序号,特征名称,数据类型,非空样本数,特征类型,GBDT重要性,RF重要性,XGBoost重要性,LGBM重要性,原始分类变量,OneHot衍生数,OneHot衍生特征 (Pipeline A)
+1,pressure_bar,float64,341,数值,0.222129,0.248036,0.043216,5528.0,—,—,—
+2,microporosity,float64,341,数值,0.187089,0.1315,0.264837,1314.0,—,—,—
+3,inv_T_K,float64,341,数值,0.122099,0.074991,0.099444,1054.0,—,—,—
+4,temperature_C,float64,341,数值,0.09883,0.093958,0.077209,1270.0,—,—,—
+5,T_lnP,float64,341,数值,0.088339,0.107516,0.007222,2254.0,—,—,—
+6,MgO_mass_ratio,float64,341,数值,0.059201,0.045382,0.040981,582.0,—,—,—
+7,Vmicro_cm3_g,float64,341,数值,0.051198,0.079058,0.013352,1067.0,—,—,—
+8,MgO_surface_density,float64,341,数值,0.039181,0.020693,0.003977,415.0,—,—,—
+9,Vtotal_cm3_g,float64,341,数值,0.036411,0.025711,0.010016,251.0,—,—,—
+10,Vmeso_cm3_g,float64,341,数值,0.019653,0.046161,0.022802,1486.0,—,—,—
+11,act1_temp_C,float64,248,数值,0.018868,0.007304,0.039404,33.0,—,—,—
+12,carb1_duration_h,float64,289,数值,0.018431,0.01187,0.001458,325.0,—,—,—
+13,act2_type,object,341,分类,0.009872,0.008539,0.021642,151.0,act2_type,2,act2_type_H3PO4  |  act2_type_none
+14,carbon_precursors,object,341,分类,0.008692,0.012504,0.002859,244.0,carbon_precursors,13,carbon_precursors_Cottonwood  |  carbon_precursors_Wheat straw  |  carbon_precursors_coffee grounds  |  carbon_precursors_palm empty fruit bunch  |  carbon_precursors_palm kernel shells  |  carbon_precursors_pollen grains  |  carbon_precursors_rambutan peel  |  carbon_precursors_rice husk  |  carbon_precursors_saw dust  |  carbon_precursors_sawdust  |  carbon_precursors_sugarcane bagasse  |  carbon_precursors_walnut shell  |  carbon_precursors_whitewood
+15,SBET_m2_g,float64,341,数值,0.006203,0.034712,0.007023,535.0,—,—,—
+16,Mg_loading_method,object,341,分类,0.004064,0.00121,0.000119,4.0,Mg_loading_method,3,Mg_loading_method_ball milling  |  Mg_loading_method_hydrothermal co-precipitation  |  Mg_loading_method_impregnation
+17,act1_duration_h,float64,248,数值,0.003949,0.003915,3.9e-05,3.0,—,—,—
+18,carb1_temp_C,float64,336,数值,0.002699,0.005867,0.001075,359.0,—,—,—
+19,act1_type,object,341,分类,0.001097,0.001716,0.012931,41.0,act1_type,4,act1_type_KOH  |  act1_type_hydrothermal  |  act1_type_none  |  act1_type_steam
+20,MgO_precursors,object,341,分类,0.001055,0.002689,0.000544,175.0,MgO_precursors,6,MgO_precursors_Mg (NO3)2⋅6H2O  |  MgO_precursors_Mg(CH3COO)2⋅4H2O  |  MgO_precursors_MgCl2⋅6H2O  |  MgO_precursors_MgCl2⋅7H2O  |  MgO_precursors_MgO  |  MgO_precursors_MgSO4⋅7H2O
+21,carb2_type,object,341,分类,0.000439,0.000744,0.000273,17.0,carb2_type,3,carb2_type_500C_15min  |  carb2_type_600C_2h  |  carb2_type_none
+22,carb1_type,object,341,分类,0.000311,0.034761,0.329293,33.0,carb1_type,4,carb1_type_conventional  |  carb1_type_fast_pyrolysis  |  carb1_type_microwave  |  carb1_type_none
+23,carb2_duration_h,float64,174,数值,0.00017,0.000644,0.00023,0.0,—,—,—
+24,carb2_temp_C,float64,174,数值,2e-05,0.000424,0.0,3.0,—,—,—
+25,post_treatment_type,object,341,分类,1e-06,9.4e-05,5.2e-05,0.0,post_treatment_type,4,post_treatment_type_none  |  post_treatment_type_sonication  |  post_treatment_type_with_rinsing  |  post_treatment_type_without_rinsing
+26,act2_duration_h,float64,9,数值,0.0,0.0,0.0,0.0,—,—,—
+27,act2_temp_C,float64,9,数值,0.0,0.0,0.0,0.0,—,—,—
