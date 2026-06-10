@@ -9,7 +9,6 @@
     "carb2_type",
     "post_treatment_type",
     "SBET_m2_g",
-    "Vtotal_cm3_g",
     "Vmicro_cm3_g",
     "MgO_mass_ratio",
     "temperature_C",
@@ -40,7 +39,6 @@
   ],
   "num_cols": [
     "SBET_m2_g",
-    "Vtotal_cm3_g",
     "Vmicro_cm3_g",
     "MgO_mass_ratio",
     "temperature_C",

@@ -81,13 +81,8 @@ def export_all():
             except (ValueError, KeyError):
                 pass  # 参数不兼容则使用默认值
 
-        # ── 在训练集上拟合 ──────────────────────────────────────────────
-        if name in ("XGBoost", "LightGBM"):
-            from src.train import compute_kde_weights
-            sw = compute_kde_weights(y_train)
-            pipe.fit(X_train, y_train, model__sample_weight=sw)
-        else:
-            pipe.fit(X_train, y_train)
+        # ── 在训练集上拟合（无权重，与 train.py 公平基准一致）──────────────
+        pipe.fit(X_train, y_train)
 
         # ── 预测 ────────────────────────────────────────────────────────
         tr_preds = pipe.predict(X_train)

@@ -100,10 +100,9 @@ def main():
     add_styled_table(doc,
         ['特征', '缺失率', '处理方法'],
         [
-            ['SBET_m2_g', '4.4%', 'KNNImputer (k=5)'],
-            ['Vtotal_cm3_g', '4.4%', 'KNNImputer (k=5)'],
-            ['Vmicro_cm3_g', '42.2%', 'IterativeImputer (BayesianRidge, max_iter=20)，物理约束Vmicro≤Vtotal'],
-            ['MgO_crystallite_size_nm', '72.1%', '删除该特征（缺失率过高）'],
+            ['SBET', '4.4%', 'KNNImputer (k=5)'],
+            ['Vtotal', '4.4%', 'KNNImputer (k=5)'],
+            ['Vmicro', '42.2%', 'IterativeImputer (BayesianRidge, max_iter=20)，物理约束Vmicro≤Vtotal'],
         ]
     )
 
@@ -116,11 +115,11 @@ def main():
     add_styled_table(doc,
         ['特征名', '公式', '物理意义'],
         [
-            ['Vmeso_cm3_g', 'Vtotal - Vmicro', '介孔体积'],
-            ['microporosity', 'Vmicro / Vtotal', '微孔率，CO₂物理吸附关键指标'],
-            ['MgO_surface_density', 'MgO_mass_ratio / (SBET / 1000)', '单位表面积MgO负载量'],
-            ['T_lnP', 'T × ln(pressure + 0.01)', '吸附条件耦合项（吸附势理论）'],
-            ['inv_T_K', '1 / (T + 273.15)', '温度倒数（1/K），van\'t Hoff自然变量'],
+            ['Vmeso', 'Vtotal − Vmicro', '介孔体积'],
+            ['Microporosity', 'Vmicro / Vtotal', '微孔率，CO₂物理吸附关键指标'],
+            ['MgO Surface Density', 'MgO Mass Ratio / (SBET / 1000)', '单位表面积MgO负载量'],
+            ['T·ln(P)', 'Temperature × ln(Pressure + 0.01)', '吸附条件耦合项（吸附势理论）'],
+            ['1/T', '1 / (Temperature + 273.15)', '温度倒数（1/K），van\'t Hoff自然变量'],
         ]
     )
     doc.add_paragraph('最终特征集：27个特征（19个数值 + 8个分类）。')
@@ -298,17 +297,17 @@ def main():
     add_styled_table(doc,
         ['特征', 'VIF', '说明'],
         [
-            ['Vtotal_cm3_g', '∞', '与其他孔结构参数完全共线'],
-            ['Vmicro_cm3_g', '∞', '与其他孔结构参数完全共线'],
-            ['Vmeso_cm3_g', '∞', 'Vtotal - Vmicro，确定性关系'],
-            ['act2_duration_h', '∞', '数据极稀疏（仅9条非零）'],
-            ['act2_temp_C', '∞', '同上'],
-            ['carb2_duration_h', '∞', '数据分布集中'],
-            ['carb2_temp_C', '∞', '同上'],
-            ['SBET_m2_g', '153.62', 'R²=0.9935，与孔容高度耦合'],
-            ['inv_T_K', '41.19', '与temperature_C确定性转换'],
-            ['temperature_C', '35.32', '与inv_T_K共线'],
-            ['carb1_temp_C', '13.48', '中度共线'],
+            ['Vtotal', '∞', '与其他孔结构参数完全共线'],
+            ['Vmicro', '∞', '与其他孔结构参数完全共线'],
+            ['Vmeso', '∞', 'Vtotal − Vmicro，确定性关系'],
+            ['act2 duration', '∞', '数据极稀疏（仅9条非零）'],
+            ['act2 temp', '∞', '同上'],
+            ['carb2 duration', '∞', '数据分布集中'],
+            ['carb2 temp', '∞', '同上'],
+            ['SBET', '153.62', 'R²=0.9935，与孔容高度耦合'],
+            ['1/T', '41.19', '与Temperature确定性转换'],
+            ['Temperature', '35.32', '与1/T共线'],
+            ['carb1 temp', '13.48', '中度共线'],
         ]
     )
     doc.add_paragraph(
@@ -318,11 +317,11 @@ def main():
     doc.add_heading('6.2 Spearman特征聚类', level=2)
     doc.add_paragraph('Spearman相关系数矩阵经Ward层次聚类，共分为9个特征簇：')
     doc.add_paragraph(
-        '• 簇1（6特征）：SBET, Vtotal, Vmicro, temperature_C, Vmeso, inv_T_K — 孔结构与温度组\n'
-        '• 簇2（4特征）：pressure_bar, carb1_temp_C, carb1_duration_h, T_lnP — 碳化条件与吸附条件组\n'
-        '• 簇3（2特征）：carb2_temp_C, carb2_duration_h — 二次碳化参数\n'
-        '• 簇4（2特征）：MgO_mass_ratio, MgO_surface_density — MgO负载量组\n'
-        '• 簇5-9（各1特征）：act1_temp_C, act1_duration_h, microporosity, act2_temp_C, act2_duration_h — 独立特征'
+        '• 簇1（6特征）：SBET, Vtotal, Vmicro, Temperature, Vmeso, 1/T — 孔结构与温度组\n'
+        '• 簇2（4特征）：Pressure, carb1 temp, carb1 duration, T·ln(P) — 碳化条件与吸附条件组\n'
+        '• 簇3（2特征）：carb2 temp, carb2 duration — 二次碳化参数\n'
+        '• 簇4（2特征）：MgO Mass Ratio, MgO Surface Density — MgO负载量组\n'
+        '• 簇5-9（各1特征）：act1 temp, act1 duration, Microporosity, act2 temp, act2 duration — 独立特征'
     )
 
     doc.add_heading('6.3 GBDT SHAP特征重要性', level=2)
@@ -334,7 +333,7 @@ def main():
          for i, row in top10_shap.iterrows()]
     )
     doc.add_paragraph(
-        'Top 1 pressure_bar（SHAP=19.17）和Top 2 microporosity（SHAP=13.80）远高于后续特征，'
+        'Top 1 Pressure（SHAP=19.17）和Top 2 Microporosity（SHAP=13.80）远高于后续特征，'
         '说明吸附操作条件和微孔结构是CO₂吸附量的两大核心驱动力。'
     )
 
@@ -351,7 +350,7 @@ def main():
     doc.add_paragraph(
         'TabPFN排列重要性 vs GBDT SHAP重要性 Spearman ρ = 0.8796（p ≈ 0），'
         '满足ρ > 0.6的阈值。两种截然不同的模型范式在特征归因上高度一致，'
-        '表明所识别的关键特征（pressure_bar, microporosity, temperature_C）是CO₂吸附的鲁棒驱动因素，'
+        '表明所识别的关键特征（Pressure, Microporosity, Temperature）是CO₂吸附的鲁棒驱动因素，'
         '不依赖于特定模型架构。'
     )
 

@@ -182,37 +182,36 @@ def figure_2_boxplot() -> plt.Figure:
         print(f"  排除零方差特征: {zero_var_cols}")
         num_cols = [c for c in num_cols if c not in zero_var_cols]
 
-    # ── 特征名映射: 下标用mathtext, 单位用Unicode上标 ──
+    # ── 特征名映射: 无单位，空格分隔，act/carb 简写 ──
     FEATURE_NAME_MAP = {
-        # 孔结构特征 — 纯Unicode, PPT可编辑
-        "SBET_m2_g":        "SBET (m²/g)",
-        "Vtotal_cm3_g":     "Vtotal (cm³/g)",
-        "Vmicro_cm3_g":     "Vmicro (cm³/g)",
-        "Vmeso_cm3_g":      "Vmeso (cm³/g)",
+        # 孔结构特征
+        "SBET_m2_g":        "SBET",
+        "Vmicro_cm3_g":     "Vmicro",
+        "Vmeso_cm3_g":      "Vmeso",
         "microporosity":    "Microporosity",
         # MgO 负载特征
-        "MgO_mass_ratio":       "MgO mass ratio",
-        "MgO_surface_density":  "MgO surface density",
-        # 工艺条件 — Unicode 符号
-        "temperature_C":    "Temperature (°C)",
-        "pressure_bar":     "Pressure (bar)",
-        "T_lnP":            "T·ln(P) (K)",
-        "inv_T_K":          "1/T (1/K)",
-        # 活化参数 — Act1/Carb1 直接连接, Temp 无点号
-        "act1_temp_C":      "Act1 Temp (°C)",
-        "act1_duration_h":  "Act1 Duration (h)",
-        "act2_temp_C":      "Act2 Temp (°C)",
-        "act2_duration_h":  "Act2 Duration (h)",
+        "MgO_mass_ratio":       "MgO Mass Ratio",
+        "MgO_surface_density":  "MgO Surface Density",
+        # 工艺条件
+        "temperature_C":    "Temperature",
+        "pressure_bar":     "Pressure",
+        "T_lnP":            "T·ln(P)",
+        "inv_T_K":          "1/T",
+        # 活化参数
+        "act1_temp_C":      "act1 temp",
+        "act1_duration_h":  "act1 duration",
+        "act2_temp_C":      "act2 temp",
+        "act2_duration_h":  "act2 duration",
         # 碳化参数
-        "carb1_temp_C":     "Carb1 Temp (°C)",
-        "carb1_duration_h": "Carb1 Duration (h)",
-        "carb2_temp_C":     "Carb2 Temp (°C)",
-        "carb2_duration_h": "Carb2 Duration (h)",
+        "carb1_temp_C":     "carb1 temp",
+        "carb1_duration_h": "carb1 duration",
+        "carb2_temp_C":     "carb2 temp",
+        "carb2_duration_h": "carb2 duration",
     }
 
     # 特征显示顺序 (逻辑排列, 不加分组)
     FEATURE_ORDER = [
-        "SBET_m2_g", "Vtotal_cm3_g", "Vmicro_cm3_g", "Vmeso_cm3_g", "microporosity",
+        "SBET_m2_g", "Vmicro_cm3_g", "Vmeso_cm3_g", "microporosity",
         "MgO_mass_ratio", "MgO_surface_density",
         "temperature_C", "pressure_bar", "T_lnP", "inv_T_K",
         "act1_temp_C", "act1_duration_h", "act2_temp_C", "act2_duration_h",
@@ -312,7 +311,12 @@ def figure_S1_precursor_distribution() -> plt.Figure:
     counts = df["carbon_precursors"].value_counts()
     small_cats = counts[counts < 10].index.tolist()
     df["carbon_precursors"] = df["carbon_precursors"].replace(
-        {c: f"Other (n<10, {len(small_cats)} types)" for c in small_cats}
+        {c: "Other" for c in small_cats}
+    )
+
+    # 统一 title case（Other 除外）
+    df["carbon_precursors"] = df["carbon_precursors"].apply(
+        lambda x: x if x == "Other" else x.title()
     )
 
     # 按中位数降序排列，Other 固定在最后
@@ -327,12 +331,14 @@ def figure_S1_precursor_distribution() -> plt.Figure:
     other_cats.sort()  # 多个Other按字母序
     order = [c for c in order if c not in other_cats] + other_cats
 
-    # 标注各类别样本量
-    label_counts = df["carbon_precursors"].value_counts()
-    labels = [f"{cat}\n(n={label_counts[cat]})" for cat in order]
+    labels = [str(cat) for cat in order]
 
     n_cats = len(order)
     fig_h = max(4.5, n_cats * 0.55)
+
+    # 全局字体: 微软雅黑加粗
+    plt.rcParams["font.family"] = "Microsoft YaHei"
+    plt.rcParams["font.weight"] = "bold"
 
     # ── 横向箱线图 ─────────────────────────────────────────────────────
     fig, ax = plt.subplots(figsize=(10, fig_h))
@@ -364,22 +370,22 @@ def figure_S1_precursor_distribution() -> plt.Figure:
         ax=ax,
     )
 
-    ax.set_yticklabels(labels, fontsize=10.5, fontweight="bold")
-    ax.set_xlabel("CO₂ Uptake (mg/g)", fontsize=13, fontweight="bold")
+    ax.set_yticklabels(labels, fontsize=13, fontweight="bold")
+    ax.set_xlabel("CO2 Uptake (mg/g)", fontsize=16, fontweight="bold")
     ax.set_ylabel("")
-    ax.tick_params(labelsize=10)
+    ax.tick_params(labelsize=13)
 
     # x 轴从 0 开始
     ax.set_xlim(-5, df["CO2_uptake_mg_g"].max() * 1.06)
 
-    title = f"CO₂ Uptake Distribution by Carbon Precursor Type (n={len(df)})"
-    ax.set_title(title, fontsize=14, fontweight="bold", pad=12)
-
     # ── 保存 ─────────────────────────────────────────────────────────
     fig.tight_layout()
+    # x轴刻度数值加粗
+    for label in ax.get_xticklabels():
+        label.set_fontweight("bold")
     FIGURES.mkdir(parents=True, exist_ok=True)
-    output_path = FIGURES / "Figure_S1_Precursor_Distribution.png"
-    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor="white")
+    output_path = FIGURES / "Figure_S1_Precursor_Distribution.pdf"
+    fig.savefig(output_path, bbox_inches="tight", facecolor="white")
     print(f"\n[OK] 已保存: {output_path}")
     print(f"     分辨率: 300 DPI, 类别数: {n_cats}, 合并小类: {small_cats}")
 

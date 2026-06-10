@@ -49,7 +49,7 @@ CATEGORIES = [
      ["MgO_precursors", "Mg_loading_method", "MgO_mass_ratio",
       "MgO_surface_density"]),
     ("4. Pore Structure",
-     ["SBET_m2_g", "Vtotal_cm3_g", "Vmicro_cm3_g",
+     ["SBET_m2_g", "Vmicro_cm3_g",
       "Vmeso_cm3_g", "microporosity"]),
 ]
 
@@ -65,8 +65,8 @@ CAT_COLORS = {
 all_cat_feats = []
 for _, feats in CATEGORIES:
     all_cat_feats.extend(feats)
-assert len(all_cat_feats) == 27, f"Expected 27 features, got {len(all_cat_feats)}"
-assert len(set(all_cat_feats)) == 27, "Duplicate feature names detected!"
+assert len(all_cat_feats) == 26, f"Expected 27 features, got {len(all_cat_feats)}"
+assert len(set(all_cat_feats)) == 26, "Duplicate feature names detected!"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 1. Load cache

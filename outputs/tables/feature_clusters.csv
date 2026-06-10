@@ -1,15 +1,17 @@
 ﻿feature,cluster_id,cluster_size,cluster_members
-T_lnP,1,2,"pressure_bar, T_lnP"
-pressure_bar,1,2,"pressure_bar, T_lnP"
-Vmeso_cm3_g,2,2,"carb1_temp_C, Vmeso_cm3_g"
-carb1_temp_C,2,2,"carb1_temp_C, Vmeso_cm3_g"
+T_lnP,1,4,"pressure_bar, carb1_temp_C, Vmeso_cm3_g, T_lnP"
+Vmeso_cm3_g,1,4,"pressure_bar, carb1_temp_C, Vmeso_cm3_g, T_lnP"
+carb1_temp_C,1,4,"pressure_bar, carb1_temp_C, Vmeso_cm3_g, T_lnP"
+pressure_bar,1,4,"pressure_bar, carb1_temp_C, Vmeso_cm3_g, T_lnP"
+SBET_m2_g,2,4,"SBET_m2_g, Vmicro_cm3_g, carb2_temp_C, carb2_duration_h"
+Vmicro_cm3_g,2,4,"SBET_m2_g, Vmicro_cm3_g, carb2_temp_C, carb2_duration_h"
+carb2_duration_h,2,4,"SBET_m2_g, Vmicro_cm3_g, carb2_temp_C, carb2_duration_h"
+carb2_temp_C,2,4,"SBET_m2_g, Vmicro_cm3_g, carb2_temp_C, carb2_duration_h"
 inv_T_K,3,2,"temperature_C, inv_T_K"
 temperature_C,3,2,"temperature_C, inv_T_K"
-SBET_m2_g,4,2,"SBET_m2_g, Vmicro_cm3_g"
-Vmicro_cm3_g,4,2,"SBET_m2_g, Vmicro_cm3_g"
-MgO_mass_ratio,5,1,MgO_mass_ratio
-MgO_surface_density,6,1,MgO_surface_density
-act1_temp_C,7,1,act1_temp_C
-carb1_duration_h,8,1,carb1_duration_h
-act1_duration_h,9,1,act1_duration_h
-microporosity,10,1,microporosity
+act1_duration_h,4,2,"act1_temp_C, act1_duration_h"
+act1_temp_C,4,2,"act1_temp_C, act1_duration_h"
+carb1_duration_h,5,1,carb1_duration_h
+MgO_mass_ratio,6,1,MgO_mass_ratio
+MgO_surface_density,7,1,MgO_surface_density
+microporosity,8,1,microporosity

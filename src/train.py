@@ -65,10 +65,7 @@ def compute_kde_weights(y: pd.Series) -> np.ndarray:
 
 
 def _make_fit_params(model_name: str, y_train: pd.Series) -> dict:
-    """为 XGBoost / LightGBM 生成 model__sample_weight 字典。"""
-    if model_name in ("XGBoost", "LightGBM"):
-        sw = compute_kde_weights(y_train)
-        return {"model__sample_weight": sw}
+    """所有模型在统一基准下无权重训练，确保公平对比。"""
     return {}
 
 

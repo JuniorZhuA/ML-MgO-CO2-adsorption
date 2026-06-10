@@ -5,13 +5,17 @@ import pandas as pd
 from sklearn.experimental import enable_iterative_imputer  # noqa
 from sklearn.impute import KNNImputer, IterativeImputer
 from sklearn.linear_model import BayesianRidge
+from sklearn.preprocessing import StandardScaler
 from sklearn.base import BaseEstimator, TransformerMixin
+
+from src.config import SEED
 
 
 class MissingValueImputer(BaseEstimator, TransformerMixin):
     """对数值列执行缺失值填补，遵循计划书的策略。
 
-    - SBET, Vtotal → KNNImputer (k=5)
+    - SBET, Vtotal → StandardScaler → KNNImputer (k=5) → inverse_transform
+      (缩放后计算近邻距离，避免量纲失真)
     - Vmicro → IterativeImputer (BayesianRidge, max_iter=20)
       + 后处理约束: Vmicro = min(Vmicro_imputed, Vtotal)
     - MgO_crystallite_size → 直接删除（双轨策略A方案）
@@ -21,10 +25,12 @@ class MissingValueImputer(BaseEstimator, TransformerMixin):
         self.drop_crystallite_size = drop_crystallite_size
 
         # 定义各列填补器
+        self._scaler = StandardScaler()
         self._knn_imputer = KNNImputer(n_neighbors=5)
         self._iter_imputer = IterativeImputer(
             estimator=BayesianRidge(),
             max_iter=20,
+            random_state=SEED,
         )
 
         # 记录哪些列需要哪种填补
@@ -33,8 +39,10 @@ class MissingValueImputer(BaseEstimator, TransformerMixin):
         self._cryst_col = "MgO_crystallite_size_nm"
 
     def fit(self, X: pd.DataFrame, y=None):
-        # 1. KNN 填补 SBET, Vtotal
-        self._knn_imputer.fit(X[self._knn_cols])
+        # 1. KNN 填补 SBET, Vtotal（先标准化，在缩放空间计算近邻距离）
+        X_knn = X[self._knn_cols].copy()
+        X_knn_scaled = self._scaler.fit_transform(X_knn)
+        self._knn_imputer.fit(X_knn_scaled)
 
         # 2. IterativeImputer 填补 Vmicro（使用完整数值列作为特征）
         num_cols = X.select_dtypes(include=np.number).columns.tolist()
@@ -49,8 +57,11 @@ class MissingValueImputer(BaseEstimator, TransformerMixin):
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X = X.copy()
 
-        # 1. KNN 填补 SBET, Vtotal
-        X[self._knn_cols] = self._knn_imputer.transform(X[self._knn_cols])
+        # 1. KNN 填补 SBET, Vtotal（缩放→填补→逆缩放，保证距离量纲统一）
+        X_knn = X[self._knn_cols].copy()
+        X_knn_scaled = self._scaler.transform(X_knn)
+        X_knn_imputed_scaled = self._knn_imputer.transform(X_knn_scaled)
+        X[self._knn_cols] = self._scaler.inverse_transform(X_knn_imputed_scaled)
 
         # 2. IterativeImputer 填补 Vmicro
         iter_features = X[self._iter_feature_cols]

@@ -49,7 +49,7 @@ GROUPS = [
         "MgO_surface_density", "post_treatment_type",
     ]),
     ("4. Final Pore Structure\n   最终孔结构特征", [
-        "SBET_m2_g", "Vtotal_cm3_g", "Vmicro_cm3_g",
+        "SBET_m2_g", "Vmicro_cm3_g",
         "Vmeso_cm3_g", "microporosity",
     ]),
 ]

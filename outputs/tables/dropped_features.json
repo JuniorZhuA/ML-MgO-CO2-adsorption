@@ -1,10 +1,7 @@
 {
   "dropped_features": [
     "act2_temp_C",
-    "act2_duration_h",
-    "Vtotal_cm3_g",
-    "carb2_duration_h",
-    "carb2_temp_C"
+    "act2_duration_h"
   ],
-  "n_dropped": 5
+  "n_dropped": 2
 }

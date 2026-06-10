@@ -98,13 +98,12 @@ _num_sel = make_column_selector(dtype_exclude=object)
 
 
 def build_pipeline_a(model):
-    """管道A（线性模型）: MissingValueImputer → FeatureEngineer → OneHot + StandardScaler + median填补."""
+    """管道A（线性模型）: MissingValueImputer → FeatureEngineer → OneHot + StandardScaler + 零填充."""
     cat_pipe = Pipeline([
         ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
         ("onehot", OneHotEncoder(sparse_output=False, handle_unknown="ignore")),
     ])
     num_pipe = Pipeline([
-        ("impute_median", SimpleImputer(strategy="median")),
         ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
         ("scale", StandardScaler()),
     ])
@@ -120,13 +119,12 @@ def build_pipeline_a(model):
 
 
 def build_pipeline_b(model):
-    """管道B（树模型）: MissingValueImputer → FeatureEngineer → OrdinalEncoder + median填补，无缩放."""
+    """管道B（树模型）: MissingValueImputer → FeatureEngineer → OrdinalEncoder + 零填充，无缩放."""
     cat_pipe = Pipeline([
         ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
         ("ordinal", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)),
     ])
     num_pipe = Pipeline([
-        ("impute_median", SimpleImputer(strategy="median")),
         ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
     ])
     preprocessor = make_column_transformer(
@@ -147,7 +145,6 @@ def build_pipeline_c(model):
         ("target", TargetEncoder(target_type="continuous", smooth="auto")),
     ])
     num_pipe = Pipeline([
-        ("impute_median", SimpleImputer(strategy="median")),
         ("impute_zero", SimpleImputer(strategy="constant", fill_value=0.0)),
         ("scale", StandardScaler()),
     ])

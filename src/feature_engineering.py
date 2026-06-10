@@ -22,9 +22,9 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
     - 复合特征: Vmeso_cm3_g, microporosity, MgO_surface_density, T_lnP, inv_T_K
     """
 
-    # ---- 正则模式 ----
-    _TEMP_RE = re.compile(r"(\d+\.?\d*)\s*°C")
-    _DURATION_RE = re.compile(r"(\d+\.?\d*)\s*(h|hour|min)")
+    # ---- 正则模式（兼容文献变体：任意空格、°C/C、hour/h/hrs、minute/min/mins）----
+    _TEMP_RE = re.compile(r"(\d+\.?\d*)\s*°?\s*C", re.IGNORECASE)
+    _DURATION_RE = re.compile(r"(\d+\.?\d*)\s*(hours?|hrs?|h|minutes?|mins?)", re.IGNORECASE)
 
     # ---- 工艺分类映射 ----
     @staticmethod
@@ -110,10 +110,12 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         # ---- 3b. 领域复合特征 ----
         X["Vmeso_cm3_g"] = X["Vtotal_cm3_g"] - X["Vmicro_cm3_g"]
         X["microporosity"] = X["Vmicro_cm3_g"] / X["Vtotal_cm3_g"].replace(0, np.nan)
+        # 消除完美线性依赖: Vtotal = Vmicro + Vmeso，保留细分特征
+        X = X.drop(columns=["Vtotal_cm3_g"])
         X["MgO_surface_density"] = X["MgO_mass_ratio"] / (
             X["SBET_m2_g"] / 1000.0
         ).replace(0, np.nan)
-        X["T_lnP"] = X["temperature_C"] * np.log(X["pressure_bar"] + 0.01)
+        X["T_lnP"] = (X["temperature_C"] + 273.15) * np.log(X["pressure_bar"] + 0.01)
         X["inv_T_K"] = 1.0 / (X["temperature_C"] + 273.15)
 
         # ---- 丢弃原始工艺文本列（信息已提取完毕）----
@@ -138,8 +140,9 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         for text in df[col]:
             text_norm = " ".join(str(text).split())  # 合并连续空格
             if text_norm == "none":
-                temps.append(np.nan)
-                durations.append(np.nan)
+                # 步骤未执行 → 温度/时长贡献为0（物理含义明确），非缺失值
+                temps.append(0.0)
+                durations.append(0.0)
             else:
                 t_match = self._TEMP_RE.search(text_norm)
                 temps.append(float(t_match.group(1)) if t_match else np.nan)
@@ -147,8 +150,10 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
                 d_match = self._DURATION_RE.search(text_norm)
                 if d_match:
                     val = float(d_match.group(1))
-                    unit = d_match.group(2)
-                    durations.append(val if unit in ("h", "hour") else val / 60.0)
+                    unit = d_match.group(2).lower()
+                    # hours: h, hour, hrs, hours → 原值; minutes: min, mins, minute, minutes → /60
+                    is_hour = unit.startswith("h")
+                    durations.append(val if is_hour else val / 60.0)
                 else:
                     durations.append(np.nan)
 

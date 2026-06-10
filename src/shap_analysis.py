@@ -10,6 +10,7 @@
 
 import sys
 import io
+import time
 import warnings
 
 import numpy as np
@@ -95,12 +96,7 @@ def diagnose_and_remove_collinear(X_num: pd.DataFrame) -> "tuple[pd.DataFrame, l
             print(f"         {col}: std={X_num[col].std():.2e}, 所有样本值={X_num[col].iloc[0]:.4f}")
 
     # ---- 2. 完美线性关系（领域知识）----
-    # Vmeso = Vtotal - Vmicro → 三者构成完美线性依赖，保留细分特征
-    pore_cols = ["Vtotal_cm3_g", "Vmicro_cm3_g", "Vmeso_cm3_g"]
-    if all(c in X_clean.columns for c in pore_cols):
-        X_clean = X_clean.drop(columns=["Vtotal_cm3_g"])
-        dropped.append("Vtotal_cm3_g")
-        print(f"\n  [剔除] 完美线性依赖 Vtotal = Vmicro + Vmeso → 保留 Vmicro、Vmeso，剔除 Vtotal")
+    # Vtotal 已在 FeatureEngineer 中丢弃（Vmeso = Vtotal - Vmicro），此处不再重复处理
 
     # ---- 3. 迭代清理残余 INF ----
     max_iter = 5

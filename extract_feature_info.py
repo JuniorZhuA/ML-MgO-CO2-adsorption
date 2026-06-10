@@ -57,8 +57,8 @@ model_feat_clean = [f.split("__", 1)[1] for f in model_feat_names_raw]
 
 # 验证: 27 个特征
 assert len(cat_cols) == 8, f"分类变量数应为 8，实际 {len(cat_cols)}"
-assert len(num_cols) == 19, f"数值变量数应为 19，实际 {len(num_cols)}"
-assert len(model_feat_clean) == 27, f"模型特征数应为 27，实际 {len(model_feat_clean)}"
+assert len(num_cols) == 18, f"数值变量数应为 19，实际 {len(num_cols)}"
+assert len(model_feat_clean) == 26, f"模型特征数应为 27，实际 {len(model_feat_clean)}"
 
 print(f"    特征工程输出: {len(X_fe.columns)} 列 (含 target '{target_col}')")
 print(f"    模型输入特征: {len(model_feat_clean)} 个 ({len(cat_cols)} 分类 + {len(num_cols)} 数值)")
@@ -92,7 +92,7 @@ for name in ["GBDT", "RF", "XGBoost", "LightGBM"]:
     pipe = joblib.load(MODELS_DIR / f"{name}_final.pkl")
     model = pipe.named_steps["model"]
     imp = model.feature_importances_
-    assert len(imp) == 27, f"{name} 重要性长度应为27，实际 {len(imp)}"
+    assert len(imp) == 26, f"{name} 重要性长度应为27，实际 {len(imp)}"
     model_importances[name] = imp
     print(f"    {name:>10s}: {len(imp)} 个特征重要性 ✓")
 
@@ -162,7 +162,7 @@ print(f"  Pipeline B (Ordinal):  {len(model_feat_clean)} 列")
 print(f"  Pipeline C (Target):   {len(model_feat_clean)} 列")
 print(f"  Pipeline D (Ordinal):  {len(model_feat_clean)} 列")
 print(f"  有特征重要性的模型:    4  (GBDT, RF, XGBoost, LightGBM)")
-print(f"  VIF 剔除特征数:        5  (act2_temp_C, act2_duration_h, Vtotal, carb2_duration_h, carb2_temp_C)")
+print(f"  VIF 剔除特征数:        5 (act2_temp_C, act2_duration_h, carb2_duration_h, carb2_temp_C; Vtotal 已在特征工程阶段剔除)  (act2_temp_C, act2_duration_h, Vtotal, carb2_duration_h, carb2_temp_C)")
 
 # ── 保存 CSV ─────────────────────────────────────────
 csv_path = TABLES_DIR / "feature_summary.csv"

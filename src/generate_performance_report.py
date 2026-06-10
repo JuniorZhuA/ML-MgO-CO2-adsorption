@@ -297,8 +297,8 @@ def generate_report(lang='en'):
             f'构效关系的强非线性本质。',
 
             f'SHAP可解释性分析中，GBDT TreeExplainer与TabPFN排列重要性高度一致'
-            f'(Spearman ρ=0.8796)。pressure_bar（操作压力）、microporosity（微孔率）和'
-            f'temperature_C（操作温度）在不同模型中一致被识别为最具影响力的特征。',
+            f'(Spearman ρ=0.8796)。Pressure（操作压力）、Microporosity（微孔率）和'
+            f'Temperature（操作温度）在不同模型中一致被识别为最具影响力的特征。',
         ]
     else:
         findings = [
@@ -319,7 +319,7 @@ def generate_report(lang='en'):
             f'nonlinear nature of the structure-property relationships in MgO-modified porous carbons.',
 
             f'SHAP analysis (GBDT TreeExplainer vs TabPFN permutation importance) shows strong agreement '
-            f'(Spearman rho=0.8796), with pressure_bar, microporosity, and temperature_C consistently '
+            f'(Spearman rho=0.8796), with Pressure, Microporosity, and Temperature consistently '
             f'emerging as the most influential features across models.',
         ]
 
